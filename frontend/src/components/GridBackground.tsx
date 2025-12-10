@@ -23,7 +23,7 @@ export function GridBackground({ children }: GridBackgroundProps) {
             linear-gradient(rgba(200, 210, 240, 0.3) 1px, transparent 1px),
             linear-gradient(90deg, rgba(200, 210, 240, 0.3) 1px, transparent 1px)
           `,
-          backgroundSize: '40px 40px',
+          backgroundSize: '20px 20px',
           pointerEvents: 'none',
         },
       }}

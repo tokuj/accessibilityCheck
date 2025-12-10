@@ -28,6 +28,7 @@ export interface AccessibilityReport {
     totalIncomplete: number;
   };
   pages: PageResult[];
+  screenshot?: string;
 }
 
 function extractWcagCriteria(tags: string[]): string[] {
@@ -48,11 +49,20 @@ function extractWcagCriteria(tags: string[]): string[] {
 
 export async function analyzeUrl(targetUrl: string): Promise<AccessibilityReport> {
   const browser = await chromium.launch();
-  const context = await browser.newContext();
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 720 },
+  });
   const page = await context.newPage();
 
   try {
     await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+
+    // Capture screenshot as base64
+    const screenshotBuffer = await page.screenshot({
+      type: 'png',
+      fullPage: false,
+    });
+    const screenshot = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
 
     const scanResults = await new AxeBuilder({ page })
       .withTags(WCAG_TAGS)
@@ -102,6 +112,7 @@ export async function analyzeUrl(targetUrl: string): Promise<AccessibilityReport
           incomplete,
         },
       ],
+      screenshot,
     };
   } finally {
     await browser.close();

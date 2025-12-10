@@ -39,8 +39,11 @@
   },
   "dependencies": {
     "@axe-core/playwright": "^4.11.0",
+    "chrome-launcher": "^1.2.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "lighthouse": "^13.0.1",
+    "pa11y": "^9.0.1",
     "playwright": "^1.52.0"
   }
 }

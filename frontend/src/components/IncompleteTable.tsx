@@ -34,6 +34,7 @@ export function IncompleteTable({ pages }: IncompleteTableProps) {
       <Table size="small">
         <TableHead>
           <TableRow>
+            <TableCell>ツール</TableCell>
             <TableCell>ページ</TableCell>
             <TableCell>ルールID</TableCell>
             <TableCell>説明</TableCell>
@@ -46,6 +47,17 @@ export function IncompleteTable({ pages }: IncompleteTableProps) {
         <TableBody>
           {allIncomplete.map((item, idx) => (
             <TableRow key={`${item.pageName}-${item.id}-${idx}`}>
+              <TableCell>
+                <Chip
+                  label={item.toolSource || 'axe-core'}
+                  size="small"
+                  variant="outlined"
+                  color={
+                    item.toolSource === 'pa11y' ? 'secondary' :
+                    item.toolSource === 'lighthouse' ? 'warning' : 'default'
+                  }
+                />
+              </TableCell>
               <TableCell>{item.pageName}</TableCell>
               <TableCell>
                 <code>{item.id}</code>

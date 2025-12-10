@@ -6,12 +6,15 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
+import Chip from '@mui/material/Chip';
 import LinkIcon from '@mui/icons-material/Link';
+import BuildIcon from '@mui/icons-material/Build';
 import { ScoreCard } from './ScoreCard';
 import { ImprovementList } from './ImprovementList';
 import { ViolationsTable } from './ViolationsTable';
 import { PassesTable } from './PassesTable';
 import { IncompleteTable } from './IncompleteTable';
+import { LighthouseScores } from './LighthouseScores';
 import type { AccessibilityReport, RuleResult } from '../types/accessibility';
 import { calculateScores } from '../utils/scoreCalculator';
 
@@ -103,8 +106,44 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
           </Box>
         )}
 
+        {/* Tools Used */}
+        {report.toolsUsed && report.toolsUsed.length > 0 && (
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'info.lighter', borderRadius: 2, border: '1px solid', borderColor: 'info.light' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <BuildIcon sx={{ fontSize: 18, color: 'info.main' }} />
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                分析ツール
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+              {report.toolsUsed.map((tool) => (
+                <Chip
+                  key={tool.name}
+                  label={`${tool.name} v${tool.version}`}
+                  size="small"
+                  variant="outlined"
+                  color={
+                    tool.name === 'pa11y' ? 'secondary' :
+                    tool.name === 'lighthouse' ? 'warning' : 'default'
+                  }
+                />
+              ))}
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                合計実行時間: {(report.toolsUsed.reduce((sum, t) => sum + t.duration, 0) / 1000).toFixed(1)}秒
+              </Typography>
+            </Box>
+          </Box>
+        )}
+
         {/* Score Card */}
         <ScoreCard totalScore={scores.totalScore} categories={scores.categories} />
+
+        {/* Lighthouse Scores */}
+        {report.lighthouseScores && (
+          <Box sx={{ mt: 3 }}>
+            <LighthouseScores scores={report.lighthouseScores} />
+          </Box>
+        )}
 
         {/* Divider */}
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />

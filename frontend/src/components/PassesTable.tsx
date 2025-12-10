@@ -33,6 +33,7 @@ export function PassesTable({ pages }: PassesTableProps) {
       <Table size="small">
         <TableHead>
           <TableRow>
+            <TableCell>ツール</TableCell>
             <TableCell>ページ</TableCell>
             <TableCell>ルールID</TableCell>
             <TableCell>説明</TableCell>
@@ -44,6 +45,17 @@ export function PassesTable({ pages }: PassesTableProps) {
         <TableBody>
           {allPasses.map((pass, idx) => (
             <TableRow key={`${pass.pageName}-${pass.id}-${idx}`}>
+              <TableCell>
+                <Chip
+                  label={pass.toolSource || 'axe-core'}
+                  size="small"
+                  variant="outlined"
+                  color={
+                    pass.toolSource === 'pa11y' ? 'secondary' :
+                    pass.toolSource === 'lighthouse' ? 'warning' : 'default'
+                  }
+                />
+              </TableCell>
               <TableCell>{pass.pageName}</TableCell>
               <TableCell>
                 <code>{pass.id}</code>

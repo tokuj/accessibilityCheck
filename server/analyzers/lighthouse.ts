@@ -2,6 +2,13 @@ import type { LighthouseResult, RuleResult, LighthouseScores, ImpactLevel } from
 
 export const LIGHTHOUSE_VERSION = '12.0.0';
 
+/**
+ * Lighthouse認証オプション
+ */
+export interface LighthouseAuthOptions {
+  headers?: Record<string, string>;  // Cookie, Authorization等
+}
+
 // Dynamic imports for ESM modules
 async function loadLighthouse() {
   const lighthouse = await import('lighthouse');
@@ -60,7 +67,10 @@ function extractWcagFromAuditId(id: string): string[] {
   return wcagMap[id] || [];
 }
 
-export async function analyzeWithLighthouse(url: string): Promise<LighthouseResult> {
+export async function analyzeWithLighthouse(
+  url: string,
+  authOptions?: LighthouseAuthOptions
+): Promise<LighthouseResult> {
   const startTime = Date.now();
 
   const { lighthouse, chromeLauncher } = await loadLighthouse();
@@ -71,12 +81,20 @@ export async function analyzeWithLighthouse(url: string): Promise<LighthouseResu
       chromeFlags: ['--headless', '--no-sandbox', '--disable-gpu'],
     });
 
-    const options = {
+    // Lighthouse設定を構築
+    const options: Parameters<typeof lighthouse>[1] = {
       logLevel: 'error' as const,
       output: 'json' as const,
       port: chrome.port,
-      onlyCategories: ['accessibility', 'performance', 'best-practices', 'seo', 'pwa'],
+      onlyCategories: ['accessibility', 'performance', 'best-practices', 'seo'],
     };
+
+    // 認証ヘッダーを設定
+    if (authOptions?.headers && Object.keys(authOptions.headers).length > 0) {
+      options.extraHeaders = authOptions.headers;
+      // セッションを維持するためstorageResetを無効化
+      options.disableStorageReset = true;
+    }
 
     const runnerResult = await lighthouse(url, options);
 

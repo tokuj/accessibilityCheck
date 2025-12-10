@@ -5,7 +5,6 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import SearchIcon from '@mui/icons-material/Search';
-import PhoneIphoneIcon from '@mui/icons-material/PhoneIphone';
 import type { LighthouseScores as LighthouseScoresType } from '../types/accessibility';
 
 interface LighthouseScoresProps {
@@ -69,7 +68,6 @@ export function LighthouseScores({ scores }: LighthouseScoresProps) {
       <ScoreRow icon={<AccessibilityNewIcon fontSize="small" />} label="Accessibility" score={scores.accessibility} />
       <ScoreRow icon={<VerifiedIcon fontSize="small" />} label="Best Practices" score={scores.bestPractices} />
       <ScoreRow icon={<SearchIcon fontSize="small" />} label="SEO" score={scores.seo} />
-      <ScoreRow icon={<PhoneIphoneIcon fontSize="small" />} label="PWA" score={scores.pwa} />
     </Box>
   );
 }

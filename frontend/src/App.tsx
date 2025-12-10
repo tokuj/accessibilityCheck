@@ -7,7 +7,7 @@ import { GridBackground } from './components/GridBackground';
 import { UrlInput } from './components/UrlInput';
 import { ReportSummary } from './components/ReportSummary';
 import { analyzeUrl } from './services/api';
-import type { AccessibilityReport } from './types/accessibility';
+import type { AccessibilityReport, AuthConfig } from './types/accessibility';
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -15,14 +15,14 @@ function App() {
   const [report, setReport] = useState<AccessibilityReport | null>(null);
   const [currentUrl, setCurrentUrl] = useState('');
 
-  const handleAnalyze = async (url: string) => {
+  const handleAnalyze = async (url: string, auth?: AuthConfig) => {
     setLoading(true);
     setError(null);
     setReport(null);
     setCurrentUrl(url);
 
     try {
-      const response = await analyzeUrl({ url });
+      const response = await analyzeUrl({ url, auth });
       if (response.status === 'completed' && response.report) {
         setReport(response.report);
       } else {

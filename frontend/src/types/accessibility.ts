@@ -47,8 +47,30 @@ export interface AccessibilityReport {
   lighthouseScores?: LighthouseScores;
 }
 
+// 認証タイプ
+export type AuthType = 'none' | 'cookie' | 'bearer' | 'basic' | 'form';
+
+// 認証設定
+export interface AuthConfig {
+  type: AuthType;
+  // Cookie認証 - "name=value; name2=value2" 形式
+  cookies?: string;
+  // Bearer Token認証
+  token?: string;
+  // Basic認証
+  username?: string;
+  password?: string;
+  // フォームログイン
+  loginUrl?: string;
+  usernameSelector?: string;
+  passwordSelector?: string;
+  submitSelector?: string;
+  successUrlPattern?: string;
+}
+
 export interface AnalyzeRequest {
   url: string;
+  auth?: AuthConfig;
 }
 
 export interface AnalyzeResponse {

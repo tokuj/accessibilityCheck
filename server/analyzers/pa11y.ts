@@ -3,6 +3,15 @@ import type { AnalyzerResult, RuleResult, ImpactLevel } from './types';
 
 export const PA11Y_VERSION = '9.0.1';
 
+/**
+ * Pa11y認証オプション
+ */
+export interface Pa11yAuthOptions {
+  headers?: Record<string, string>;  // Cookie, Authorization等
+  username?: string;  // Basic認証
+  password?: string;  // Basic認証
+}
+
 // Pa11y issue type to impact level mapping
 function mapTypeToImpact(type: string): ImpactLevel | undefined {
   switch (type) {
@@ -30,18 +39,39 @@ function extractWcagFromCode(code: string): string[] {
   return criteria;
 }
 
-export async function analyzeWithPa11y(url: string): Promise<AnalyzerResult> {
+export async function analyzeWithPa11y(
+  url: string,
+  authOptions?: Pa11yAuthOptions
+): Promise<AnalyzerResult> {
   const startTime = Date.now();
 
   try {
-    const results = await pa11y(url, {
+    // Pa11y設定を構築
+    const pa11yOptions: Parameters<typeof pa11y>[1] = {
       standard: 'WCAG2AA',
       timeout: 60000,
       wait: 1000,
       chromeLaunchConfig: {
         args: ['--no-sandbox', '--disable-setuid-sandbox'],
       },
-    });
+    };
+
+    // 認証ヘッダーを設定
+    if (authOptions?.headers && Object.keys(authOptions.headers).length > 0) {
+      pa11yOptions.headers = authOptions.headers;
+    }
+
+    // Basic認証を設定（Pa11yはpage.settingsで設定）
+    if (authOptions?.username && authOptions?.password) {
+      pa11yOptions.page = {
+        settings: {
+          userName: authOptions.username,
+          password: authOptions.password,
+        },
+      };
+    }
+
+    const results = await pa11y(url, pa11yOptions);
 
     const violations: RuleResult[] = results.issues
       .filter((issue) => issue.type === 'error')

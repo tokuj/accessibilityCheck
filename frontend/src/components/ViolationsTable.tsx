@@ -34,6 +34,7 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
       <Table size="small">
         <TableHead>
           <TableRow>
+            <TableCell>ツール</TableCell>
             <TableCell>ページ</TableCell>
             <TableCell>ルールID</TableCell>
             <TableCell>説明</TableCell>
@@ -46,6 +47,17 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
         <TableBody>
           {allViolations.map((violation, idx) => (
             <TableRow key={`${violation.pageName}-${violation.id}-${idx}`}>
+              <TableCell>
+                <Chip
+                  label={violation.toolSource || 'axe-core'}
+                  size="small"
+                  variant="outlined"
+                  color={
+                    violation.toolSource === 'pa11y' ? 'secondary' :
+                    violation.toolSource === 'lighthouse' ? 'warning' : 'default'
+                  }
+                />
+              </TableCell>
               <TableCell>{violation.pageName}</TableCell>
               <TableCell>
                 <code>{violation.id}</code>

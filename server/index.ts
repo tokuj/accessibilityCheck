@@ -32,6 +32,7 @@ app.post('/api/analyze', async (req, res) => {
   try {
     const report = await analyzeUrl(url);
     console.log(`分析完了: 違反${report.summary.totalViolations}件, パス${report.summary.totalPasses}件`);
+    console.log(`スクリーンショット: ${report.screenshot ? 'あり (' + Math.round(report.screenshot.length / 1024) + 'KB)' : 'なし'}`);
 
     res.json({
       status: 'completed',

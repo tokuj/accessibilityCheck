@@ -3,8 +3,6 @@ import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
 import InputBase from '@mui/material/InputBase';
 import IconButton from '@mui/material/IconButton';
-import AddIcon from '@mui/icons-material/Add';
-import MenuBookIcon from '@mui/icons-material/MenuBook';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 
 interface UrlInputProps {
@@ -55,20 +53,16 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
         width: compact ? '100%' : { xs: '90%', sm: '600px', md: '700px' },
         maxWidth: '700px',
         mx: 'auto',
-        px: 2,
-        py: 0.5,
+        px: 3,
+        py: 1,
         borderRadius: '50px',
         boxShadow: '0 4px 20px rgba(0, 0, 0, 0.08)',
         backgroundColor: 'white',
         border: '1px solid rgba(0, 0, 0, 0.06)',
       }}
     >
-      <IconButton sx={{ p: 1, color: 'text.secondary' }} disabled>
-        <AddIcon />
-      </IconButton>
       <InputBase
         sx={{
-          ml: 1,
           flex: 1,
           fontSize: '1rem',
           '& input::placeholder': {
@@ -81,10 +75,7 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
         onChange={(e) => setUrl(e.target.value)}
         disabled={disabled}
       />
-      <IconButton sx={{ p: 1, color: 'text.secondary' }} disabled>
-        <MenuBookIcon />
-      </IconButton>
-      <Box sx={{ width: '1px', height: 24, bgcolor: 'divider', mx: 1 }} />
+      <Box sx={{ width: '1px', height: 24, bgcolor: 'divider', mx: 2 }} />
       <IconButton
         type="submit"
         disabled={disabled || !url.trim()}

@@ -25,6 +25,7 @@ export interface AccessibilityReport {
     totalIncomplete: number;
   };
   pages: PageResult[];
+  screenshot?: string;
 }
 
 export interface AnalyzeRequest {

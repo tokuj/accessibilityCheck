@@ -12,7 +12,10 @@
     "test:a11y:headed": "npx playwright test tests/accessibility.spec.ts --headed",
     "test:a11y:ui": "npx playwright test tests/accessibility.spec.ts --ui",
     "test:report": "npx playwright show-report",
-    "report:a11y": "npx tsx scripts/generate-a11y-report.ts"
+    "report:a11y": "npx tsx scripts/generate-a11y-report.ts",
+    "server": "npx tsx server/index.ts",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev": "concurrently \"npm run server\" \"npm run dev:frontend\""
   },
   "repository": {
     "type": "git",
@@ -28,9 +31,16 @@
   "homepage": "https://github.com/tokuj/accessibilityCheck#readme",
   "devDependencies": {
     "@playwright/test": "^1.57.0",
-    "@types/node": "^24.10.2"
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.1",
+    "@types/node": "^24.10.2",
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.4"
   },
   "dependencies": {
-    "@axe-core/playwright": "^4.11.0"
+    "@axe-core/playwright": "^4.11.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "playwright": "^1.52.0"
   }
 }

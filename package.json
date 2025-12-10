@@ -1,0 +1,36 @@
+{
+  "name": "accessibilitycheck",
+  "version": "1.0.0",
+  "description": "Playwrightとaxe-coreを使用したWebアクセシビリティ自動テストプロジェクト",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "npx playwright test",
+    "test:a11y": "npx playwright test tests/accessibility.spec.ts",
+    "test:a11y:headed": "npx playwright test tests/accessibility.spec.ts --headed",
+    "test:a11y:ui": "npx playwright test tests/accessibility.spec.ts --ui",
+    "test:report": "npx playwright show-report",
+    "report:a11y": "npx tsx scripts/generate-a11y-report.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tokuj/accessibilityCheck.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/tokuj/accessibilityCheck/issues"
+  },
+  "homepage": "https://github.com/tokuj/accessibilityCheck#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^24.10.2"
+  },
+  "dependencies": {
+    "@axe-core/playwright": "^4.11.0"
+  }
+}

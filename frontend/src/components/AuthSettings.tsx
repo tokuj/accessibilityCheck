@@ -164,8 +164,11 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
                 onChange={(e) => handleFieldChange('password', e.target.value)}
                 fullWidth
               />
-              <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>
+              <Typography variant="subtitle2" sx={{ mt: 2, mb: 0.5 }}>
                 フォーム要素のセレクタ（CSS）
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                ブラウザの開発者ツール（F12）でログインフォームの要素を右クリック →「Copy」→「Copy selector」でセレクタを取得できます。
               </Typography>
               <TextField
                 label="ユーザー名入力欄"
@@ -174,6 +177,7 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
                 onChange={(e) => handleFieldChange('usernameSelector', e.target.value)}
                 fullWidth
                 size="small"
+                helperText="例: #email, input[name='username'], .login-input"
               />
               <TextField
                 label="パスワード入力欄"
@@ -182,6 +186,7 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
                 onChange={(e) => handleFieldChange('passwordSelector', e.target.value)}
                 fullWidth
                 size="small"
+                helperText="例: #password, input[type='password']"
               />
               <TextField
                 label="送信ボタン"
@@ -190,6 +195,7 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
                 onChange={(e) => handleFieldChange('submitSelector', e.target.value)}
                 fullWidth
                 size="small"
+                helperText="例: button[type='submit'], .login-button, #login-btn"
               />
               <TextField
                 label="ログイン成功URLパターン（正規表現）"

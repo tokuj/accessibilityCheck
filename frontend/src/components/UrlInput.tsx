@@ -9,7 +9,17 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
 import LockIcon from '@mui/icons-material/Lock';
 import LockOpenIcon from '@mui/icons-material/LockOpen';
 import { AuthSettings } from './AuthSettings';
-import type { AuthConfig } from '../types/accessibility';
+import type { AuthConfig, AuthType } from '../types/accessibility';
+
+const getAuthTypeLabel = (type?: AuthType): string => {
+  switch (type) {
+    case 'cookie': return 'Cookie認証';
+    case 'bearer': return 'Bearer Token';
+    case 'basic': return 'Basic認証';
+    case 'form': return 'フォームログイン';
+    default: return '認証なし';
+  }
+};
 
 interface UrlInputProps {
   onAnalyze: (url: string, auth?: AuthConfig) => void;
@@ -72,17 +82,17 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
           border: '1px solid rgba(0, 0, 0, 0.06)',
         }}
       >
-        <Tooltip title={hasAuth ? `認証設定: ${authConfig?.type}` : '認証設定'}>
+        <Tooltip title={hasAuth ? `認証設定済み (${getAuthTypeLabel(authConfig?.type)})` : '認証設定'}>
           <IconButton
             onClick={() => setAuthDialogOpen(true)}
             disabled={disabled}
             sx={{
               mr: 1,
-              color: hasAuth ? 'primary.main' : 'text.secondary',
+              color: hasAuth ? 'success.main' : 'text.secondary',
             }}
           >
             <Badge
-              color="primary"
+              color="success"
               variant="dot"
               invisible={!hasAuth}
             >

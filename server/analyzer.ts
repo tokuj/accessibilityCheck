@@ -73,7 +73,7 @@ export async function analyzeUrl(
   const page = await context.newPage();
 
   try {
-    await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    await page.goto(targetUrl, { waitUntil: 'load', timeout: 60000 });
 
     // Capture screenshot
     const screenshotBuffer = await page.screenshot({
@@ -97,7 +97,7 @@ export async function analyzeUrl(
     await browser.close();
     // タイムアウトエラーの場合、ユーザーフレンドリーなメッセージに変換
     if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error('ページの読み込みがタイムアウトしました。認証が必要なページの場合は、ロックアイコンから認証設定を行ってください。');
+      throw new Error('ページの読み込みがタイムアウトしました（60秒）。サイトが重い、またはアクセスできない可能性があります。');
     }
     throw error;
   } finally {

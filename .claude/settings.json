@@ -1,0 +1,8 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_VERTEX": 1,
+    "ANTHROPIC_VERTEX_PROJECT_ID": "coproto-gcp",
+    "ANTHROPIC_MODEL": "claude-opus-4-5@20251101",
+    "GOOGLE_APPLICATION_CREDENTIALS": "/Users/junt/key/coproto-gcp-05516a3cad28.json"
+  }
+}

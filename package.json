@@ -35,7 +35,8 @@
     "@types/express": "^5.0.1",
     "@types/node": "^24.10.2",
     "concurrently": "^9.1.2",
-    "tsx": "^4.19.4"
+    "tsx": "^4.19.4",
+    "vitest": "^4.0.16"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.11.0",

@@ -64,7 +64,7 @@ function App() {
               textAlign: 'center',
             }}
           >
-            アクセシビリティチェック
+            a11y Checker
           </Typography>
           <Typography
             variant="body1"

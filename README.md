@@ -1,4 +1,4 @@
-# Accessibility Check with Playwright
+# a11y Checker with Playwright
 
 Playwrightとaxe-coreを使用したWebアクセシビリティ自動テストプロジェクト
 

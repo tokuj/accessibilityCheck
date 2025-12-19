@@ -1,4 +1,5 @@
 import type { LighthouseResult, RuleResult, LighthouseScores, ImpactLevel } from './types';
+import { chromium } from 'playwright';
 
 export const LIGHTHOUSE_VERSION = '12.0.0';
 
@@ -77,7 +78,9 @@ export async function analyzeWithLighthouse(
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | null = null;
 
   try {
+    // PlaywrightのChromiumパスを使用（Docker環境でも動作するよう）
     chrome = await chromeLauncher.launch({
+      chromePath: chromium.executablePath(),
       chromeFlags: ['--headless', '--no-sandbox', '--disable-gpu'],
     });
 

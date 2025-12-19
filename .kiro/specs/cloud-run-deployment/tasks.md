@@ -2,7 +2,7 @@
 
 ## Task 1: Dockerコンテナ化
 
-- [ ] 1.1 (P) Dockerfileを作成する
+- [x] 1.1 (P) Dockerfileを作成する
   - Playwright公式イメージ（mcr.microsoft.com/playwright:v1.57.0-noble）をベースに使用
   - package.jsonとpackage-lock.jsonをコピーし、npm ciで依存関係をインストール
   - server/ディレクトリとtsconfig.jsonをコピー
@@ -10,20 +10,20 @@
   - npx tsx server/index.tsでサーバーを起動
   - _Requirements: 1.1, 1.2, 1.3, 1.5_
 
-- [ ] 1.2 (P) .dockerignoreファイルを作成する
+- [x] 1.2 (P) .dockerignoreファイルを作成する
   - node_modules/を除外（コンテナ内で再インストール）
   - frontend/を除外（バックエンドのみコンテナ化）
   - tests/、test-results/を除外
   - .git/、.kiro/、TODO/を除外
   - _Requirements: 1.4_
 
-- [ ] 1.3 Lighthouseのchrome-launcherがPlaywrightのChromiumを使用するよう修正する
+- [x] 1.3 Lighthouseのchrome-launcherがPlaywrightのChromiumを使用するよう修正する
   - playwrightからchromiumをインポート
   - chromeLauncher.launch()にchromePath: chromium.executablePath()オプションを追加
   - ローカル環境でも動作することを確認
   - _Requirements: 1.3_
 
-- [ ] 1.4 Dockerイメージをビルドして動作確認する
+- [x] 1.4 Dockerイメージをビルドして動作確認する
   - docker buildコマンドでイメージをビルド
   - docker runでコンテナを起動し、ポート8080でリクエストを受け付けることを確認
   - /api/healthエンドポイントにアクセスして200 OKが返ることを確認

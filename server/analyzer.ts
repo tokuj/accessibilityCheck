@@ -95,9 +95,19 @@ export async function analyzeUrl(
     console.log(`  [1/3] axe-core 完了: 違反${axeResult.violations.length}件, パス${axeResult.passes.length}件 (${axeResult.duration}ms)`);
   } catch (error) {
     await browser.close();
-    // タイムアウトエラーの場合、ユーザーフレンドリーなメッセージに変換
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new Error('ページの読み込みがタイムアウトしました（60秒）。サイトが重い、またはアクセスできない可能性があります。');
+    if (error instanceof Error) {
+      // コンテキスト破棄エラー（ページがナビゲーションを行った場合）
+      if (error.message.includes('Execution context was destroyed')) {
+        throw new Error('ページが分析中にリダイレクトまたはナビゲーションを行いました。静的なページURLを指定してください。');
+      }
+      // ターゲットが閉じられたエラー
+      if (error.message.includes('Target closed') || error.message.includes('Target page, context or browser has been closed')) {
+        throw new Error('ページへのアクセス中に接続が切断されました。URLを確認してください。');
+      }
+      // タイムアウトエラー
+      if (error.name === 'TimeoutError') {
+        throw new Error('ページの読み込みがタイムアウトしました（60秒）。サイトが重い、またはアクセスできない可能性があります。');
+      }
     }
     throw error;
   } finally {

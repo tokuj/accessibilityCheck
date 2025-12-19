@@ -74,6 +74,24 @@ app.get('/api/egress-ip', async (_, res) => {
   }
 });
 
+// エラーハンドリングミドルウェア（CORSヘッダー付与）
+// 未処理のエラーが発生した場合も、CORSヘッダーを付与してレスポンスを返す
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled error:', err);
+
+  // CORSヘッダーを手動で設定
+  const origin = req.headers.origin;
+  if (origin && corsConfig.origin.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
+  res.status(500).json({
+    status: 'error',
+    error: err.message || '予期しないエラーが発生しました',
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`サーバー起動: http://localhost:${PORT}`);
 });

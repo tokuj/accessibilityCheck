@@ -26,7 +26,7 @@
 
 バックエンドのCloud Runデプロイが完了済み：
 
-- **バックエンドAPI**: `https://a11y-check-api-pazgfztcsa-an.a.run.app`
+- **バックエンドAPI**: `https://a11y-check-api-783872951114.asia-northeast1.run.app`
 - **デプロイスクリプト**: `scripts/deploy.sh`
 - **Dockerfile**: プロジェクトルートに配置（バックエンド用）
 
@@ -95,6 +95,7 @@ sequenceDiagram
     participant Docker as Docker
     participant AR as Artifact Registry
     participant CR as Cloud Run
+    participant BackendScript as deploy.sh
 
     Dev->>Script: ./scripts/deploy-frontend.sh
     Script->>Script: gcloud config set project
@@ -106,9 +107,27 @@ sequenceDiagram
     AR-->>Script: Image pushed
     Script->>CR: gcloud run deploy
     CR-->>Script: Service URL
-    Script->>Script: Update backend CORS
-    Script-->>Dev: Display URLs
+    Script-->>Dev: Display URLs & CORS update command
+
+    Note over Dev,BackendScript: CORS設定更新（必須）
+    Dev->>BackendScript: FRONTEND_ORIGIN=<url> ./scripts/deploy.sh
+    BackendScript->>CR: Update backend with ALLOWED_ORIGINS
+    CR-->>BackendScript: Backend updated
 ```
+
+### CORS設定更新フロー
+
+フロントエンドのCloud Runデプロイ後、バックエンドのCORS設定を更新する必要がある。
+
+**手順**:
+1. フロントエンドデプロイ完了後、表示されるURLを確認
+2. バックエンドを以下のコマンドで再デプロイ
+
+```bash
+FRONTEND_ORIGIN=https://a11y-check-frontend-783872951114.asia-northeast1.run.app ./scripts/deploy.sh
+```
+
+**重要**: この手順を実行しないと、フロントエンドからバックエンドAPIへのリクエストがCORSエラーでブロックされる。
 
 ### リクエストフロー
 
@@ -394,7 +413,7 @@ FRONTEND_URL=$(gcloud run services describe ${SERVICE_NAME} --region ${REGION} -
 echo "  ${FRONTEND_URL}"
 echo ""
 echo "バックエンドAPI URL:"
-echo "  https://a11y-check-api-pazgfztcsa-an.a.run.app"
+echo "  https://a11y-check-api-783872951114.asia-northeast1.run.app"
 echo ""
 echo "=========================================="
 echo "NOTE: バックエンドのCORS設定を更新する場合:"

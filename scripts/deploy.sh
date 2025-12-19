@@ -148,7 +148,7 @@ gcloud run deploy ${SERVICE_NAME} \
     --network=${VPC_NAME} \
     --subnet=${SUBNET_NAME} \
     --vpc-egress=all-traffic \
-    --set-env-vars "NODE_ENV=production,ALLOWED_ORIGINS=${FRONTEND_ORIGIN}"
+    --set-env-vars "^##^NODE_ENV=production##ALLOWED_ORIGINS=${FRONTEND_ORIGIN}"
 
 # デプロイ結果表示
 echo ""

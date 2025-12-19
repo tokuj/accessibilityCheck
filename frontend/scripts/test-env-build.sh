@@ -6,7 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FRONTEND_DIR="$(dirname "$SCRIPT_DIR")"
-EXPECTED_URL="https://a11y-check-api-pazgfztcsa-an.a.run.app"
+EXPECTED_URL="https://a11y-check-api-783872951114.asia-northeast1.run.app"
 
 echo "=========================================="
 echo "環境変数ビルドテスト"

@@ -1,0 +1,36 @@
+# 依存関係（コンテナ内で再インストール）
+node_modules
+
+# Git
+.git
+.gitignore
+
+# テストファイル
+*.spec.ts
+*.spec.tsx
+*.test.ts
+*.test.tsx
+__tests__
+coverage
+
+# 開発用設定
+.env.local
+.env.development
+.env.development.local
+
+# IDE設定
+.vscode
+.idea
+*.swp
+*.swo
+
+# ビルド成果物（コンテナ内で再ビルド）
+dist
+
+# ドキュメント
+*.md
+!README.md
+
+# その他
+.DS_Store
+npm-debug.log*

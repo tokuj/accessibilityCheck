@@ -67,7 +67,7 @@ cd frontend && npm run dev
 
 ```bash
 # frontend/.env.development
-VITE_API_URL=https://a11y-check-api-pazgfztcsa-an.a.run.app
+VITE_API_URL=https://a11y-check-api-783872951114.asia-northeast1.run.app
 ```
 
 ローカルでバックエンドを起動する必要はありません。
@@ -93,7 +93,7 @@ VITE_API_URL=
 
 ```bash
 # frontend/.env.production
-VITE_API_URL=https://a11y-check-api-xxxxx-an.a.run.app
+VITE_API_URL=https://a11y-check-api-783872951114.asia-northeast1.run.app
 ```
 
 ### 2. ビルドの実行
@@ -175,7 +175,7 @@ FRONTEND_ORIGIN="https://app.example.com,https://staging.example.com"
 **デバッグ方法**:
 ```bash
 # バックエンドのヘルスチェック
-curl https://a11y-check-api-xxxxx-an.a.run.app/api/health
+curl https://a11y-check-api-783872951114.asia-northeast1.run.app/api/health
 ```
 
 ### タイムアウトエラー

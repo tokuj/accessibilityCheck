@@ -1,11 +1,14 @@
 import express from 'express';
 import cors from 'cors';
 import { analyzeUrl, type AuthConfig } from './analyzer';
+import { getCorsConfig } from './cors-config';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// CORS設定：環境変数ALLOWED_ORIGINSで許可オリジンを指定可能
+const corsConfig = getCorsConfig();
+app.use(cors(corsConfig));
 app.use(express.json());
 
 app.post('/api/analyze', async (req, res) => {

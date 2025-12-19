@@ -56,6 +56,24 @@ app.get('/api/health', (_, res) => {
   res.json({ status: 'ok' });
 });
 
+// 外部IPアドレス確認用エンドポイント（固定IP確認用）
+app.get('/api/egress-ip', async (_, res) => {
+  try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    res.json({
+      status: 'ok',
+      egressIp: data.ip,
+      message: 'このIPアドレスがCloud Runからの外向き通信に使用されます',
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      error: error instanceof Error ? error.message : 'IPアドレス取得エラー',
+    });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`サーバー起動: http://localhost:${PORT}`);
 });

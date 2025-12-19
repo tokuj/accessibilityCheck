@@ -11,6 +11,7 @@
 | [テスト実行ガイド](./accessibility-testing-guide.md) | セットアップから実行、結果の確認方法まで |
 | [WCAG準拠基準リファレンス](./wcag-reference.md) | WCAG 2.1 Level AA の基準と違反パターン |
 | [WCAG網羅性と改善戦略](./wcag-coverage-strategy.md) | 現在の網羅性と網羅性を上げる施策 |
+| [GitHub Actions CIガイド](./github-actions-ci-guide.md) | GitHub ActionsでのアクセシビリティテストCI/CD設定ガイド |
 
 ## クイックスタート
 

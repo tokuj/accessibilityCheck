@@ -36,7 +36,8 @@
     "@types/node": "^24.10.2",
     "concurrently": "^9.1.2",
     "tsx": "^4.19.4",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.16",
+    "yaml": "^2.8.2"
   },
   "dependencies": {
     "@axe-core/playwright": "^4.11.0",

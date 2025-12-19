@@ -20,6 +20,12 @@ ROUTER_NAME="a11y-router"
 NAT_NAME="a11y-nat"
 STATIC_IP_NAME="a11y-static-ip"
 
+# CORS設定
+# フロントエンドのホスティングURLを設定（複数指定可能：カンマ区切り）
+# 本番環境デプロイ前に実際のURLに更新してください
+# デフォルトで開発環境（localhost:5173）を含める
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://localhost:5173}"
+
 echo "=========================================="
 echo "Cloud Run デプロイ開始"
 echo "=========================================="
@@ -142,7 +148,7 @@ gcloud run deploy ${SERVICE_NAME} \
     --network=${VPC_NAME} \
     --subnet=${SUBNET_NAME} \
     --vpc-egress=all-traffic \
-    --set-env-vars "NODE_ENV=production"
+    --set-env-vars "NODE_ENV=production,ALLOWED_ORIGINS=${FRONTEND_ORIGIN}"
 
 # デプロイ結果表示
 echo ""

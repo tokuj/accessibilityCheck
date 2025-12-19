@@ -93,4 +93,24 @@ test.describe('deploy.sh スクリプト', () => {
     // サービスURL取得コマンド
     expect(content).toContain('gcloud run services describe');
   });
+
+  test('CORS許可オリジン設定が含まれていること', async () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+
+    // ALLOWED_ORIGINS環境変数が設定されていること
+    expect(content).toContain('ALLOWED_ORIGINS');
+
+    // --set-env-varsにALLOWED_ORIGINSが含まれていること
+    expect(content).toMatch(/--set-env-vars.*ALLOWED_ORIGINS/);
+  });
+
+  test('フロントエンドオリジン設定のプレースホルダーまたは設定変数が存在すること', async () => {
+    const content = fs.readFileSync(scriptPath, 'utf-8');
+
+    // FRONTEND_ORIGIN変数が定義されているか、プレースホルダーURLが含まれていること
+    const hasFrontendOriginVar = content.includes('FRONTEND_ORIGIN=');
+    const hasPlaceholder = content.includes('https://') && content.includes('ALLOWED_ORIGINS');
+
+    expect(hasFrontendOriginVar || hasPlaceholder).toBe(true);
+  });
 });

@@ -46,7 +46,7 @@
 
 ## Task 3: デプロイスクリプト作成
 
-- [ ] 3.1 scriptsディレクトリとdeploy.shスクリプトを作成する
+- [x] 3.1 scriptsディレクトリとdeploy.shスクリプトを作成する
   - set -eでエラー時に即終了するよう設定
   - PROJECT_ID、REGION、SERVICE_NAME、IMAGE_NAME、REGISTRYを変数として定義
   - gcloud config set projectでGCPプロジェクトを設定
@@ -54,13 +54,13 @@
   - gcloud auth configure-dockerでDocker認証を設定
   - _Requirements: 3.1, 3.5_
 
-- [ ] 3.2 deploy.shにビルドとプッシュ処理を追加する
+- [x] 3.2 deploy.shにビルドとプッシュ処理を追加する
   - docker buildコマンドでイメージをビルド
   - docker pushコマンドでArtifact Registryにプッシュ
   - エラー発生時はエラーメッセージを表示して終了
   - _Requirements: 3.2, 3.3, 3.7_
 
-- [ ] 3.3 deploy.shにCloud Runデプロイ処理を追加する
+- [x] 3.3 deploy.shにCloud Runデプロイ処理を追加する
   - gcloud run deployコマンドでCloud Runにデプロイ
   - リージョン、メモリ、タイムアウト、インスタンス数を設定
   - 未認証アクセスを許可する設定を追加
@@ -70,13 +70,13 @@
 
 ## Task 4: デプロイ実行と動作確認
 
-- [ ] 4.1 deploy.shを実行してCloud Runにデプロイする
+- [x] 4.1 deploy.shを実行してCloud Runにデプロイする
   - スクリプトに実行権限を付与
   - ./scripts/deploy.shを実行
   - デプロイ完了後に表示されるURLを確認
   - _Requirements: 2.1, 2.2, 3.4, 3.6_
 
-- [ ] 4.2 デプロイされたサービスの動作を確認する
+- [x] 4.2 デプロイされたサービスの動作を確認する
   - /api/healthエンドポイントにアクセスして200 OKが返ることを確認
   - /api/analyzeエンドポイントでアクセシビリティ分析が動作することを確認
   - Cloud Runコンソールでログを確認

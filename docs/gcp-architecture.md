@@ -94,7 +94,7 @@ sequenceDiagram
 | リソース種別 | リソース名 | リージョン | 詳細 |
 |-------------|-----------|-----------|------|
 | Cloud Run | a11y-check-frontend | asia-northeast1 | Memory: 256Mi, nginx:alpine-slim |
-| Cloud Run | a11y-check-api | asia-northeast1 | Memory: 2Gi, Timeout: 300s, Playwright |
+| Cloud Run | a11y-check-api | asia-northeast1 | Memory: 4Gi, Timeout: 300s, Playwright |
 | VPCネットワーク | a11y-vpc | グローバル | カスタムモード |
 | サブネット | a11y-cloudrun-subnet | asia-northeast1 | CIDR: 10.10.0.0/26 (64アドレス) |
 | 静的外部IP | a11y-static-ip | asia-northeast1 | 35.243.70.169 |
@@ -135,11 +135,10 @@ flowchart TD
     CheckNAT{NAT存在?}
     CheckNAT -->|No| CreateNAT[NAT作成]
     CheckNAT -->|Yes| ReuseNAT[既存NAT再利用]
-    CreateNAT --> DockerBuild
-    ReuseNAT --> DockerBuild
+    CreateNAT --> CloudBuild
+    ReuseNAT --> CloudBuild
 
-    DockerBuild[Docker Build<br/>--platform linux/amd64] --> DockerPush[Docker Push]
-    DockerPush --> Deploy[Cloud Run Deploy<br/>--vpc-egress=all-traffic]
+    CloudBuild[Cloud Build<br/>gcloud builds submit] --> Deploy[Cloud Run Deploy<br/>--vpc-egress=all-traffic]
     Deploy --> ShowResult[結果表示<br/>- サービスURL<br/>- 固定IP]
     ShowResult --> End([完了])
 ```
@@ -162,8 +161,32 @@ flowchart TD
 
 Cloud Runからの全ての外向き通信（Playwright経由のWebサイトアクセス含む）はこのIPアドレスから発信されます。
 
+## デプロイスクリプト
+
+| スクリプト | 対象 | 説明 |
+|-----------|------|------|
+| `scripts/deploy.sh` | バックエンド | VPCインフラ構築 + Cloud Build + Cloud Runデプロイ |
+| `scripts/deploy-frontend.sh` | フロントエンド | Cloud Build + Cloud Runデプロイ |
+
+両スクリプトともCloud Buildを使用するため、ローカルDockerは不要です。
+
+## CORS設定
+
+バックエンドは環境変数 `ALLOWED_ORIGINS` でCORSを制御:
+
+```
+ALLOWED_ORIGINS=https://a11y-check-frontend-783872951114.asia-northeast1.run.app,http://localhost:5173
+```
+
+- 本番フロントエンドURL
+- ローカル開発環境（localhost:5173）
+
 ## 参考リンク
 
 - [Direct VPC egress | Cloud Run](https://cloud.google.com/run/docs/configuring/vpc-direct-vpc)
 - [Static outbound IP | Cloud Run](https://cloud.google.com/run/docs/configuring/static-outbound-ip)
 - [Cloud NAT概要](https://cloud.google.com/nat/docs/overview)
+
+---
+
+_最終更新: 2025-12-20_

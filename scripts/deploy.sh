@@ -22,9 +22,8 @@ STATIC_IP_NAME="a11y-static-ip"
 
 # CORS設定
 # フロントエンドのホスティングURLを設定（複数指定可能：カンマ区切り）
-# 本番環境デプロイ前に実際のURLに更新してください
-# デフォルトで開発環境（localhost:5173）を含める
-FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-http://localhost:5173}"
+# 本番フロントエンドと開発環境（localhost:5173）の両方を許可
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://a11y-check-frontend-783872951114.asia-northeast1.run.app,http://localhost:5173}"
 
 echo "=========================================="
 echo "Cloud Run デプロイ開始"
@@ -115,33 +114,18 @@ fi
 echo "VPCインフラストラクチャのセットアップ完了"
 echo "=========================================="
 
-# Artifact Registryリポジトリ作成（存在しない場合）
-echo "Artifact Registryリポジトリを確認中..."
-gcloud artifacts repositories create cloud-run-source-deploy \
-    --repository-format=docker \
-    --location=${REGION} \
-    --description="Cloud Run deployment images" 2>/dev/null || true
+# Cloud Build経由でビルド（ローカルDocker不要）
+echo "Cloud Build経由でビルド中..."
+gcloud builds submit --tag ${REGISTRY}/${IMAGE_NAME}:latest .
 
-# Docker認証設定
-echo "Docker認証を設定中..."
-gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
-
-# イメージビルド（Cloud Runはamd64を必要とする）
-echo "Dockerイメージをビルド中（linux/amd64）..."
-docker build --platform linux/amd64 -t ${REGISTRY}/${IMAGE_NAME}:latest .
-
-# イメージプッシュ
-echo "Dockerイメージをプッシュ中..."
-docker push ${REGISTRY}/${IMAGE_NAME}:latest
-
-# Cloud Runデプロイ（VPC egress設定付き）
+# Cloud Runにデプロイ（VPC egress設定付き）
 echo "Cloud Runにデプロイ中（VPC egress: all-traffic）..."
 gcloud run deploy ${SERVICE_NAME} \
     --image ${REGISTRY}/${IMAGE_NAME}:latest \
     --region ${REGION} \
     --platform managed \
     --allow-unauthenticated \
-    --memory 2Gi \
+    --memory 4Gi \
     --timeout 300 \
     --min-instances 0 \
     --max-instances 10 \

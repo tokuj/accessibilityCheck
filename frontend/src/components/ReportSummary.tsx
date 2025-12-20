@@ -56,7 +56,7 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   const displayUrl = url.length > 50 ? url.substring(0, 50) + '...' : url;
 
   return (
-    <Card sx={{ maxWidth: 900, mx: 'auto', mb: 4 }}>
+    <Card sx={{ maxWidth: 1400, mx: 'auto', mb: 4 }}>
       <CardContent sx={{ p: 4 }}>
         {/* Header with URL and close button */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>

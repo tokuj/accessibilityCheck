@@ -54,7 +54,7 @@ export function ScoreCard({ totalScore, categories }: ScoreCardProps) {
             分析レポート
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            AIによる包括的なアクセシビリティ診断結果
+            axe-core・pa11y・Lighthouseによる総合診断結果
           </Typography>
         </Box>
         <Box sx={{ textAlign: 'right' }}>

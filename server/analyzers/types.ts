@@ -40,6 +40,32 @@ export interface LighthouseScores {
   pwa?: number;             // 0-100 (undefined if not applicable)
 }
 
+// AI総評の影響度サマリー
+export interface ImpactSummary {
+  critical: number;
+  serious: number;
+  moderate: number;
+  minor: number;
+}
+
+// 検出された問題の詳細（構造化された改善提案）
+export interface DetectedIssue {
+  ruleId: string;           // ルールID（例: color-contrast）
+  whatIsHappening: string;  // 何が起きているか
+  whatIsNeeded: string;     // 修正に必要なもの
+  howToFix: string;         // どう修正するか
+}
+
+// AI総評（Gemini Flash生成）
+export interface AISummary {
+  overallAssessment: string;           // 全体的な評価
+  detectedIssues: DetectedIssue[];     // 構造化された問題詳細
+  prioritizedImprovements: string[];   // 優先度順の改善ポイント
+  specificRecommendations: string[];   // 具体的な推奨事項
+  impactSummary: ImpactSummary;        // 影響度別の問題数
+  generatedAt: string;                 // 生成日時
+}
+
 // Complete accessibility report
 export interface AccessibilityReport {
   generatedAt: string;
@@ -52,6 +78,7 @@ export interface AccessibilityReport {
   screenshot?: string;
   toolsUsed: ToolInfo[];
   lighthouseScores?: LighthouseScores;
+  aiSummary?: AISummary;  // AI総評（オプショナル、後方互換性のため）
 }
 
 // Common analyzer interface

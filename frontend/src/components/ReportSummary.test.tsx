@@ -34,10 +34,6 @@ const createMockReport = (): AccessibilityReport => ({
     totalViolations: 5,
     totalPasses: 10,
     totalIncomplete: 2,
-    criticalCount: 1,
-    seriousCount: 2,
-    moderateCount: 1,
-    minorCount: 1,
   },
   pages: [
     {
@@ -62,8 +58,6 @@ describe('ReportSummary', () => {
       const card = container.querySelector('.MuiCard-root');
       expect(card).toBeTruthy();
 
-      // getComputedStyleでスタイルを確認
-      const styles = window.getComputedStyle(card as Element);
       // MUIのsxプロパティはインラインスタイルとして適用される
       expect(card).toHaveStyle({ maxWidth: '1400px' });
     });

@@ -1,10 +1,11 @@
 import { chromium } from 'playwright';
-import type { AccessibilityReport, RuleResult, ToolInfo, LighthouseScores } from './analyzers/types';
+import type { AccessibilityReport, RuleResult, ToolInfo, LighthouseScores, AISummary } from './analyzers/types';
 import { analyzeWithAxe, AXE_VERSION } from './analyzers/axe';
 import { analyzeWithPa11y, PA11Y_VERSION } from './analyzers/pa11y';
 import { analyzeWithLighthouse, LIGHTHOUSE_VERSION } from './analyzers/lighthouse';
 import { AuthManager } from './auth/manager';
 import type { AuthConfig } from './auth/types';
+import { GeminiService } from './services/gemini';
 
 // Re-export types for backward compatibility
 export type { RuleResult, AccessibilityReport } from './analyzers/types';
@@ -172,6 +173,25 @@ export async function analyzeUrl(
   const totalDuration = toolsUsed.reduce((sum, t) => sum + t.duration, 0);
   console.log(`  合計実行時間: ${(totalDuration / 1000).toFixed(1)}秒`);
 
+  // 4. AI総評生成（Gemini成功時のみ表示、フォールバックなし）
+  let aiSummary: AISummary | undefined;
+  if (lighthouseScores) {
+    console.log('  [4/4] AI総評生成開始...');
+    try {
+      const aiResult = await GeminiService.generateAISummary(allViolations, lighthouseScores);
+      if (aiResult.success) {
+        aiSummary = aiResult.value;
+        console.log('  [4/4] AI総評生成完了');
+      } else {
+        console.warn(`  [4/4] AI総評生成失敗: ${aiResult.error.message}`);
+        // フォールバックなし - aiSummaryはundefinedのまま
+      }
+    } catch (error) {
+      console.error('  [4/4] AI総評生成エラー:', error);
+      // フォールバックなし - aiSummaryはundefinedのまま
+    }
+  }
+
   return {
     generatedAt: new Date().toISOString(),
     summary: {
@@ -191,5 +211,7 @@ export async function analyzeUrl(
     screenshot,
     toolsUsed,
     lighthouseScores,
+    aiSummary,
   };
 }
+

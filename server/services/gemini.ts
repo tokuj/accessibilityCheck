@@ -1,0 +1,321 @@
+import { SecretManagerService, type Result } from './secret-manager';
+import type { RuleResult, LighthouseScores, AISummary, ImpactSummary, DetectedIssue } from '../analyzers/types';
+
+// Geminiエラー型
+export type GeminiError =
+  | { type: 'api_error'; message: string; statusCode: number }
+  | { type: 'timeout'; message: string }
+  | { type: 'rate_limit'; message: string; retryAfter: number };
+
+// Gemini APIのモデル名
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
+// APIのタイムアウト（ミリ秒）
+const API_TIMEOUT_MS = 30000;
+
+// Gemini APIのエンドポイント
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * Gemini APIを使用したAI総評生成サービス
+ */
+export const GeminiService = {
+  /**
+   * 違反情報とスコアからAI総評を生成する
+   */
+  async generateAISummary(
+    violations: RuleResult[],
+    scores: LighthouseScores
+  ): Promise<Result<AISummary, GeminiError>> {
+    // 1. APIキーを取得
+    const secretResult = await SecretManagerService.getSecret('google_api_key_toku');
+    if (!secretResult.success) {
+      console.error('Gemini: APIキー取得失敗');
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `APIキー取得に失敗しました: ${secretResult.error.message}`,
+          statusCode: 0,
+        },
+      };
+    }
+
+    const apiKey = secretResult.value;
+
+    // 2. プロンプトを構築
+    const prompt = buildPrompt(violations, scores);
+
+    // 3. Gemini APIを呼び出し
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+      const response = await fetch(
+        `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 2048,
+              responseMimeType: 'application/json',
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      // レート制限チェック
+      if (response.status === 429) {
+        const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+        return {
+          success: false,
+          error: {
+            type: 'rate_limit',
+            message: 'レート制限に達しました',
+            retryAfter,
+          },
+        };
+      }
+
+      // その他のエラー
+      if (!response.ok) {
+        return {
+          success: false,
+          error: {
+            type: 'api_error',
+            message: `Gemini API エラー: ${response.statusText}`,
+            statusCode: response.status,
+          },
+        };
+      }
+
+      // 4. レスポンスをパース
+      const data = await response.json();
+      const aiSummary = parseGeminiResponse(data, violations);
+
+      if (!aiSummary) {
+        return {
+          success: false,
+          error: {
+            type: 'api_error',
+            message: 'Gemini APIからの応答をパースできませんでした',
+            statusCode: 0,
+          },
+        };
+      }
+
+      console.log('Gemini: AI総評生成完了');
+      return { success: true, value: aiSummary };
+    } catch (error) {
+      // タイムアウト
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return {
+          success: false,
+          error: {
+            type: 'timeout',
+            message: 'Gemini APIへのリクエストがタイムアウトしました',
+          },
+        };
+      }
+
+      // その他のエラー
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Gemini: API呼び出しエラー:', message);
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `Gemini API呼び出し中にエラーが発生しました: ${message}`,
+          statusCode: 0,
+        },
+      };
+    }
+  },
+};
+
+/**
+ * AI総評生成用のプロンプトを構築
+ */
+function buildPrompt(violations: RuleResult[], scores: LighthouseScores): string {
+  // 影響度別に違反を集計
+  const impactSummary = countByImpact(violations);
+
+  // ツール別に違反を集計
+  const axeViolations = violations.filter(v => v.toolSource === 'axe-core');
+  const pa11yViolations = violations.filter(v => v.toolSource === 'pa11y');
+  const lighthouseViolations = violations.filter(v => v.toolSource === 'lighthouse');
+
+  // 全違反情報を整形（ツールソースを含む）
+  const violationsSummary = violations
+    .map((v, i) => `${i + 1}. ルールID: ${v.id}
+   検出ツール: ${v.toolSource}
+   説明: ${v.description}
+   影響度: ${v.impact || '不明'}
+   検出箇所数: ${v.nodeCount}
+   WCAG: ${v.wcagCriteria.join(', ') || 'N/A'}`)
+    .join('\n\n');
+
+  return `あなたはWebアクセシビリティの専門家です。以下の分析結果を元に、開発者が即座にアクションを取れる具体的な総評を日本語で作成してください。
+
+## 重要な指示
+- **すべての出力は日本語で記述すること**（ruleIdのみ英語可）
+- **overallAssessmentは必ず「検出された違反は〇件で、」から開始すること**
+- **Lighthouseスコアから始めることは禁止**
+- **Lighthouseスコアへの言及は禁止（プロンプトに含まれていない）**
+- 3つのツール（axe-core、pa11y、lighthouse）を同等に扱うこと
+- いずれのツールも"主要"または"補助"的と表現しないこと
+- 抽象的な表現（「改善が必要です」「問題があります」など）は禁止
+- 各問題について「何が起きているか」「修正に必要なもの」「どう修正するか」を必ず具体的に記述
+- コード例やHTML/CSS修正例を含めること
+- 英語のルール名や技術用語には日本語の説明を追加すること
+
+## 使用ツール
+本分析では以下の3つのアクセシビリティ検証ツールを使用しています（アルファベット順）：
+- **axe-core**: 業界標準のアクセシビリティエンジン（検出: ${axeViolations.length}件）
+- **lighthouse**: Google Chrome DevTools のアクセシビリティ監査（検出: ${lighthouseViolations.length}件）
+- **pa11y**: HTML CodeSniffer ベースの検証ツール（検出: ${pa11yViolations.length}件）
+
+※ axe-coreとlighthouseは一部同一ルールを共有するため、件数には重複が含まれる可能性があります。
+
+## 分析結果サマリー
+- 3ツール合計の検出違反数: ${violations.length}件
+  - Critical（致命的）: ${impactSummary.critical}件
+  - Serious（重大）: ${impactSummary.serious}件
+  - Moderate（中程度）: ${impactSummary.moderate}件
+  - Minor（軽微）: ${impactSummary.minor}件
+
+## 検出された違反（全${violations.length}件）
+${violationsSummary || '違反は検出されませんでした'}
+
+## 出力形式（JSON）
+以下の形式で回答してください。detectedIssuesには上記の主要な違反それぞれについて具体的な修正方法を記述してください：
+
+{
+  "overallAssessment": "全体評価（必ず「検出された違反は〇件で、」から開始し、主要な問題タイプと影響度を説明する）",
+  "detectedIssues": [
+    {
+      "ruleId": "検出されたルールID（例: color-contrast）",
+      "whatIsHappening": "何が起きているか（具体的な問題の説明）",
+      "whatIsNeeded": "修正に必要なもの（必要なリソース・知識・基準値）",
+      "howToFix": "どう修正するか（具体的なコード例やCSS修正例を含む）"
+    }
+  ],
+  "prioritizedImprovements": [
+    "影響度順の改善タスク（具体的なアクションを記述）"
+  ],
+  "specificRecommendations": [
+    "開発ワークフローへの推奨事項"
+  ],
+  "impactSummary": {
+    "critical": ${impactSummary.critical},
+    "serious": ${impactSummary.serious},
+    "moderate": ${impactSummary.moderate},
+    "minor": ${impactSummary.minor}
+  }
+}
+
+回答はJSON形式のみで、他のテキストは含めないでください。`;
+}
+
+/**
+ * 影響度別に違反を集計
+ */
+function countByImpact(violations: RuleResult[]): ImpactSummary {
+  return violations.reduce(
+    (acc, v) => {
+      const impact = v.impact || 'minor';
+      acc[impact] = (acc[impact] || 0) + 1;
+      return acc;
+    },
+    { critical: 0, serious: 0, moderate: 0, minor: 0 } as ImpactSummary
+  );
+}
+
+/**
+ * Gemini APIのレスポンスをパース
+ */
+function parseGeminiResponse(
+  data: unknown,
+  violations: RuleResult[]
+): AISummary | null {
+  try {
+    // レスポンス構造を型アサーション
+    const response = data as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>;
+        };
+      }>;
+    };
+
+    const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) {
+      console.error('Gemini: レスポンスにテキストがありません');
+      return null;
+    }
+
+    // JSONをパース
+    const parsed = JSON.parse(text) as {
+      overallAssessment?: string;
+      detectedIssues?: Array<{
+        ruleId?: string;
+        whatIsHappening?: string;
+        whatIsNeeded?: string;
+        howToFix?: string;
+      }>;
+      prioritizedImprovements?: string[];
+      specificRecommendations?: string[];
+      impactSummary?: Partial<ImpactSummary>;
+    };
+
+    // 必須フィールドの検証
+    if (!parsed.overallAssessment) {
+      console.error('Gemini: overallAssessmentが見つかりません');
+      return null;
+    }
+
+    // 影響度サマリーがない場合は再計算
+    const impactSummary: ImpactSummary = parsed.impactSummary
+      ? {
+          critical: parsed.impactSummary.critical ?? 0,
+          serious: parsed.impactSummary.serious ?? 0,
+          moderate: parsed.impactSummary.moderate ?? 0,
+          minor: parsed.impactSummary.minor ?? 0,
+        }
+      : countByImpact(violations);
+
+    // detectedIssuesをパース（存在しない場合は空配列）
+    const detectedIssues: DetectedIssue[] = (parsed.detectedIssues || [])
+      .filter((issue) => issue.ruleId && issue.whatIsHappening && issue.whatIsNeeded && issue.howToFix)
+      .map((issue) => ({
+        ruleId: issue.ruleId!,
+        whatIsHappening: issue.whatIsHappening!,
+        whatIsNeeded: issue.whatIsNeeded!,
+        howToFix: issue.howToFix!,
+      }));
+
+    return {
+      overallAssessment: parsed.overallAssessment,
+      detectedIssues,
+      prioritizedImprovements: parsed.prioritizedImprovements || [],
+      specificRecommendations: parsed.specificRecommendations || [],
+      impactSummary,
+      generatedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    console.error('Gemini: レスポンスのパースに失敗:', error);
+    return null;
+  }
+}

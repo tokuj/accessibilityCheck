@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { ViolationsTable } from './ViolationsTable';
 import type { PageResult } from '../types/accessibility';
 
@@ -142,64 +142,5 @@ describe('ViolationsTable', () => {
     });
   });
 
-  describe('タスク2.2: CSVダウンロードボタン', () => {
-    let createObjectURLMock: ReturnType<typeof vi.fn>;
-    let revokeObjectURLMock: ReturnType<typeof vi.fn>;
-
-    beforeEach(() => {
-      createObjectURLMock = vi.fn().mockReturnValue('blob:mock-url');
-      revokeObjectURLMock = vi.fn();
-
-      const OriginalURL = URL;
-      vi.stubGlobal('URL', class extends OriginalURL {
-        static createObjectURL = createObjectURLMock;
-        static revokeObjectURL = revokeObjectURLMock;
-      });
-    });
-
-    it('違反がある場合はCSVダウンロードボタンが表示されること', () => {
-      const pages = createMockPages();
-      render(<ViolationsTable pages={pages} targetUrl="https://example.com" />);
-
-      const downloadButton = screen.getByRole('button', { name: /CSV/i });
-      expect(downloadButton).toBeInTheDocument();
-    });
-
-    it('違反がない場合はCSVダウンロードボタンが表示されないこと', () => {
-      const emptyPages: PageResult[] = [
-        {
-          name: 'トップページ',
-          url: 'https://example.com',
-          violations: [],
-          passes: [],
-          incomplete: [],
-        },
-      ];
-
-      render(<ViolationsTable pages={emptyPages} targetUrl="https://example.com" />);
-
-      const downloadButton = screen.queryByRole('button', { name: /CSV/i });
-      expect(downloadButton).not.toBeInTheDocument();
-    });
-
-    it('CSVダウンロードボタンをクリックするとダウンロードが実行されること', () => {
-      const pages = createMockPages();
-      render(<ViolationsTable pages={pages} targetUrl="https://example.com" />);
-
-      const downloadButton = screen.getByRole('button', { name: /CSV/i });
-      fireEvent.click(downloadButton);
-
-      expect(createObjectURLMock).toHaveBeenCalled();
-    });
-
-    it('targetUrlが未指定の場合もボタンが機能すること', () => {
-      const pages = createMockPages();
-      render(<ViolationsTable pages={pages} />);
-
-      const downloadButton = screen.getByRole('button', { name: /CSV/i });
-      fireEvent.click(downloadButton);
-
-      expect(createObjectURLMock).toHaveBeenCalled();
-    });
-  });
 });
+// CSVダウンロードボタンはReportSummaryコンポーネントに移動済み

@@ -1,7 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import { analyzeUrl, type AuthConfig } from './analyzer';
+import { analyzeUrl, type AuthConfig, type ProgressCallback } from './analyzer';
 import { getCorsConfig } from './cors-config';
+import { createSSEHandler, parseAuthFromQuery } from './sse-handler';
+import type { SSEEvent } from './analyzers/sse-types';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -55,6 +57,12 @@ app.post('/api/analyze', async (req, res) => {
 app.get('/api/health', (_, res) => {
   res.json({ status: 'ok' });
 });
+
+// SSEストリーミングエンドポイント
+const sseHandler = createSSEHandler(async (url, auth, onProgress, _res) => {
+  return await analyzeUrl(url, auth, onProgress);
+});
+app.get('/api/analyze-stream', sseHandler);
 
 // 外部IPアドレス確認用エンドポイント（固定IP確認用）
 app.get('/api/egress-ip', async (_, res) => {

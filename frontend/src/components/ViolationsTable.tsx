@@ -9,17 +9,36 @@ import Link from '@mui/material/Link';
 import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import DownloadIcon from '@mui/icons-material/Download';
 import { ImpactBadge } from './ImpactBadge';
+import { exportViolationsToCsv, type ViolationWithPage } from '../utils/csvExport';
 import type { PageResult } from '../types/accessibility';
 
 interface ViolationsTableProps {
   pages: PageResult[];
+  targetUrl?: string;
 }
 
-export function ViolationsTable({ pages }: ViolationsTableProps) {
-  const allViolations = pages.flatMap((page) =>
-    page.violations.map((v) => ({ ...v, pageName: page.name, pageUrl: page.url }))
+export function ViolationsTable({ pages, targetUrl }: ViolationsTableProps) {
+  const allViolations: ViolationWithPage[] = pages.flatMap((page) =>
+    page.violations.map((v) => ({
+      toolSource: v.toolSource || 'axe-core',
+      pageName: page.name,
+      pageUrl: page.url,
+      id: v.id,
+      description: v.description,
+      impact: v.impact,
+      nodeCount: v.nodeCount,
+      wcagCriteria: v.wcagCriteria,
+      helpUrl: v.helpUrl,
+    }))
   );
+
+  const handleDownloadCsv = () => {
+    const url = targetUrl || allViolations[0]?.pageUrl || 'unknown';
+    exportViolationsToCsv(allViolations, url);
+  };
 
   if (allViolations.length === 0) {
     return (
@@ -30,7 +49,18 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
   }
 
   return (
-    <TableContainer component={Paper}>
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<DownloadIcon />}
+          onClick={handleDownloadCsv}
+        >
+          CSVダウンロード
+        </Button>
+      </Box>
+      <TableContainer component={Paper}>
       <Table size="small">
         <TableHead>
           <TableRow>
@@ -62,7 +92,7 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
               <TableCell>
                 <code>{violation.id}</code>
               </TableCell>
-              <TableCell sx={{ maxWidth: 300 }}>{violation.description}</TableCell>
+              <TableCell sx={{ minWidth: 250 }}>{violation.description}</TableCell>
               <TableCell>
                 <ImpactBadge impact={violation.impact} />
               </TableCell>
@@ -90,5 +120,6 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
         </TableBody>
       </Table>
     </TableContainer>
+    </Box>
   );
 }

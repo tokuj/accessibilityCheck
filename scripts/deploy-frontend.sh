@@ -30,18 +30,9 @@ gcloud artifacts repositories create cloud-run-source-deploy \
     --location=${REGION} \
     --description="Cloud Run deployment images" 2>/dev/null || true
 
-# Docker認証設定
-echo "Docker認証を設定中..."
-gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
-
-# frontendディレクトリに移動してビルド
-echo "Dockerイメージをビルド中（linux/amd64）..."
-cd "$(dirname "$0")/../frontend"
-docker build --platform linux/amd64 -t ${REGISTRY}/${IMAGE_NAME}:latest .
-
-# イメージプッシュ
-echo "Dockerイメージをプッシュ中..."
-docker push ${REGISTRY}/${IMAGE_NAME}:latest
+# Cloud Build経由でビルド（ローカルDocker不要）
+echo "Cloud Build経由でビルド中..."
+gcloud builds submit --tag ${REGISTRY}/${IMAGE_NAME}:latest "$(dirname "$0")/../frontend"
 
 # Cloud Runデプロイ
 echo "Cloud Runにデプロイ中..."

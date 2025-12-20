@@ -105,3 +105,80 @@ export interface AnalyzeResponse {
   report?: AccessibilityReport;
   error?: string;
 }
+
+// SSEイベント型定義
+
+/**
+ * SSEログイベント
+ * 分析中の一般的なログメッセージを送信
+ */
+export interface LogEvent {
+  type: 'log';
+  message: string;
+  timestamp: string;
+}
+
+/**
+ * SSE進捗イベント
+ * 分析ステップの進捗状況を送信
+ */
+export interface ProgressEvent {
+  type: 'progress';
+  step: number;
+  total: number;
+  stepName: string;
+}
+
+/**
+ * SSE違反検出イベント
+ * 違反が検出されたときに送信
+ */
+export interface ViolationEvent {
+  type: 'violation';
+  rule: string;
+  impact: Impact;
+  count: number;
+}
+
+/**
+ * SSE完了イベント
+ * 分析完了時にレポートを送信
+ */
+export interface CompleteEvent {
+  type: 'complete';
+  report: AccessibilityReport;
+}
+
+/**
+ * SSEエラーイベント
+ * エラー発生時に送信
+ */
+export interface ErrorEvent {
+  type: 'error';
+  message: string;
+  code: string;
+}
+
+/**
+ * 全SSEイベントのユニオン型
+ */
+export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent;
+
+/**
+ * ログエントリ（UI表示用）
+ */
+export interface LogEntry {
+  timestamp: string;
+  type: 'info' | 'progress' | 'violation' | 'error' | 'complete';
+  message: string;
+}
+
+/**
+ * 分析進捗状態（UI表示用）
+ */
+export interface AnalysisProgressState {
+  logs: LogEntry[];
+  status: 'idle' | 'analyzing' | 'completed' | 'error';
+  currentStep: number;
+  totalSteps: number;
+}

@@ -1,4 +1,11 @@
-import type { AnalyzeRequest, AnalyzeResponse } from '../types/accessibility';
+import type {
+  AnalyzeRequest,
+  AnalyzeResponse,
+  SSEEvent,
+  AccessibilityReport,
+  AuthConfig,
+  LogEntry,
+} from '../types/accessibility';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
 const REQUEST_TIMEOUT_MS = 300000; // 5分
@@ -76,4 +83,102 @@ export async function analyzeUrl(request: AnalyzeRequest): Promise<AnalyzeRespon
   }
 
   return response.json();
+}
+
+/**
+ * SSEイベントのコールバック型
+ */
+export interface SSECallbacks {
+  onLog?: (log: LogEntry) => void;
+  onProgress?: (step: number, total: number, stepName: string) => void;
+  onComplete?: (report: AccessibilityReport) => void;
+  onError?: (message: string) => void;
+}
+
+/**
+ * SSEストリーミングでアクセシビリティ分析を実行
+ */
+export function analyzeUrlWithSSE(
+  request: AnalyzeRequest,
+  callbacks: SSECallbacks
+): { cancel: () => void } {
+  const url = new URL(`${API_BASE_URL}/api/analyze-stream`);
+  url.searchParams.set('url', request.url);
+
+  // 認証パラメータを追加
+  if (request.auth) {
+    url.searchParams.set('authType', request.auth.type);
+    if (request.auth.username) url.searchParams.set('authUsername', request.auth.username);
+    if (request.auth.password) url.searchParams.set('authPassword', request.auth.password);
+    if (request.auth.token) url.searchParams.set('authToken', request.auth.token);
+    if (request.auth.cookies) url.searchParams.set('authCookies', request.auth.cookies);
+    if (request.auth.loginUrl) url.searchParams.set('authLoginUrl', request.auth.loginUrl);
+    if (request.auth.usernameSelector) url.searchParams.set('authUsernameSelector', request.auth.usernameSelector);
+    if (request.auth.passwordSelector) url.searchParams.set('authPasswordSelector', request.auth.passwordSelector);
+    if (request.auth.submitSelector) url.searchParams.set('authSubmitSelector', request.auth.submitSelector);
+    if (request.auth.successUrlPattern) url.searchParams.set('authSuccessUrlPattern', request.auth.successUrlPattern);
+  }
+
+  const eventSource = new EventSource(url.toString());
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data: SSEEvent = JSON.parse(event.data);
+
+      switch (data.type) {
+        case 'log':
+          callbacks.onLog?.({
+            timestamp: data.timestamp,
+            type: 'info',
+            message: data.message,
+          });
+          break;
+
+        case 'progress':
+          callbacks.onProgress?.(data.step, data.total, data.stepName);
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'progress',
+            message: `[${data.step}/${data.total}] ${data.stepName}`,
+          });
+          break;
+
+        case 'violation':
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'violation',
+            message: `違反検出: ${data.rule} (${data.impact}) - ${data.count}件`,
+          });
+          break;
+
+        case 'complete':
+          callbacks.onComplete?.(data.report);
+          eventSource.close();
+          break;
+
+        case 'error':
+          callbacks.onError?.(data.message);
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'error',
+            message: data.message,
+          });
+          eventSource.close();
+          break;
+      }
+    } catch {
+      // JSONパースエラーは無視
+    }
+  };
+
+  eventSource.onerror = () => {
+    callbacks.onError?.('サーバーとの接続が切断されました');
+    eventSource.close();
+  };
+
+  return {
+    cancel: () => {
+      eventSource.close();
+    },
+  };
 }

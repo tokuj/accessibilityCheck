@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
-import CircularProgress from '@mui/material/CircularProgress';
 import { GridBackground } from './components/GridBackground';
 import { UrlInput } from './components/UrlInput';
 import { ReportSummary } from './components/ReportSummary';
-import { analyzeUrl } from './services/api';
-import type { AccessibilityReport, AuthConfig } from './types/accessibility';
+import { AnalysisProgress } from './components/AnalysisProgress';
+import { analyzeUrlWithSSE } from './services/api';
+import type { AccessibilityReport, AuthConfig, LogEntry } from './types/accessibility';
+
+// 最大ログ行数（メモリ管理のため）
+const MAX_LOG_ENTRIES = 1000;
 
 function App() {
   const [loading, setLoading] = useState(false);
@@ -15,30 +18,66 @@ function App() {
   const [report, setReport] = useState<AccessibilityReport | null>(null);
   const [currentUrl, setCurrentUrl] = useState('');
 
-  const handleAnalyze = async (url: string, auth?: AuthConfig) => {
+  // SSE用の状態
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(4);
+  const [stepName, setStepName] = useState('');
+
+  const handleAnalyze = useCallback((url: string, auth?: AuthConfig) => {
     setLoading(true);
     setError(null);
     setReport(null);
     setCurrentUrl(url);
+    setLogs([]);
+    setCurrentStep(0);
+    setStepName('');
 
-    try {
-      const response = await analyzeUrl({ url, auth });
-      if (response.status === 'completed' && response.report) {
-        setReport(response.report);
-      } else {
-        setError(response.error || '分析に失敗しました');
+    analyzeUrlWithSSE(
+      { url, auth },
+      {
+        onLog: (log) => {
+          setLogs((prev) => {
+            const newLogs = [...prev, log];
+            // 最大行数を超えたら古いログを削除
+            if (newLogs.length > MAX_LOG_ENTRIES) {
+              return newLogs.slice(-MAX_LOG_ENTRIES);
+            }
+            return newLogs;
+          });
+        },
+        onProgress: (step, total, name) => {
+          setCurrentStep(step);
+          setTotalSteps(total);
+          setStepName(name);
+        },
+        onComplete: (report) => {
+          setReport(report);
+          setLoading(false);
+          setLogs((prev) => [
+            ...prev,
+            {
+              timestamp: new Date().toISOString(),
+              type: 'complete',
+              message: '分析が完了しました',
+            },
+          ]);
+        },
+        onError: (message) => {
+          setError(message);
+          setLoading(false);
+        },
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '予期しないエラーが発生しました');
-    } finally {
-      setLoading(false);
-    }
-  };
+    );
+  }, []);
 
   const handleReset = () => {
     setReport(null);
     setError(null);
     setCurrentUrl('');
+    setLogs([]);
+    setCurrentStep(0);
+    setStepName('');
   };
 
   return (
@@ -84,7 +123,7 @@ function App() {
         </Box>
       )}
 
-      {/* Loading Screen */}
+      {/* Loading Screen with Live Logs */}
       {loading && (
         <Box
           sx={{
@@ -96,13 +135,12 @@ function App() {
             px: 2,
           }}
         >
-          <CircularProgress size={60} sx={{ mb: 3 }} />
-          <Typography variant="h6" gutterBottom>
-            分析中...
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Webページをスキャンしています。しばらくお待ちください。
-          </Typography>
+          <AnalysisProgress
+            logs={logs}
+            currentStep={currentStep}
+            totalSteps={totalSteps}
+            stepName={stepName}
+          />
         </Box>
       )}
 

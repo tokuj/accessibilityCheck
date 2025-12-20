@@ -6,10 +6,12 @@ import { analyzeWithLighthouse, LIGHTHOUSE_VERSION } from './analyzers/lighthous
 import { AuthManager } from './auth/manager';
 import type { AuthConfig } from './auth/types';
 import { GeminiService } from './services/gemini';
+import type { ProgressCallback, SSEEvent } from './analyzers/sse-types';
 
 // Re-export types for backward compatibility
 export type { RuleResult, AccessibilityReport } from './analyzers/types';
 export type { AuthConfig } from './auth/types';
+export type { ProgressCallback } from './analyzers/sse-types';
 
 export interface PageResult {
   name: string;
@@ -19,9 +21,61 @@ export interface PageResult {
   incomplete: RuleResult[];
 }
 
+/**
+ * ヘルパー関数: ログを console.log と onProgress の両方に送信
+ */
+function emitLog(message: string, onProgress?: ProgressCallback): void {
+  console.log(message);
+  if (onProgress) {
+    onProgress({
+      type: 'log',
+      message,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * ヘルパー関数: 進捗イベントを送信
+ */
+function emitProgress(step: number, total: number, stepName: string, onProgress?: ProgressCallback): void {
+  if (onProgress) {
+    onProgress({
+      type: 'progress',
+      step,
+      total,
+      stepName,
+    });
+  }
+}
+
+/**
+ * ヘルパー関数: 違反検出イベントを送信
+ */
+function emitViolations(violations: RuleResult[], onProgress?: ProgressCallback): void {
+  if (onProgress && violations.length > 0) {
+    // 影響度ごとにグループ化して通知
+    const impactCounts = violations.reduce((acc, v) => {
+      const impact = v.impact || 'minor';
+      acc[impact] = (acc[impact] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    for (const [impact, count] of Object.entries(impactCounts)) {
+      onProgress({
+        type: 'violation',
+        rule: `${count} violations`,
+        impact: impact as 'critical' | 'serious' | 'moderate' | 'minor',
+        count,
+      });
+    }
+  }
+}
+
 export async function analyzeUrl(
   targetUrl: string,
-  authConfig?: AuthConfig
+  authConfig?: AuthConfig,
+  onProgress?: ProgressCallback
 ): Promise<AccessibilityReport> {
   const toolsUsed: ToolInfo[] = [];
   let allViolations: RuleResult[] = [];
@@ -35,16 +89,17 @@ export async function analyzeUrl(
 
   // 認証が必要な場合、認証を実行
   if (authManager.requiresAuth()) {
-    console.log('  認証処理を開始...');
+    emitLog('  認証処理を開始...', onProgress);
     const authResult = await authManager.authenticate();
     if (!authResult.success) {
       throw new Error(`認証に失敗しました: ${authResult.error}`);
     }
-    console.log('  認証処理完了');
+    emitLog('  認証処理完了', onProgress);
   }
 
   // 1. axe-core analysis with Playwright
-  console.log('  [1/3] axe-core 分析開始...');
+  emitProgress(1, 4, 'axe-core', onProgress);
+  emitLog('  [1/4] axe-core 分析開始...', onProgress);
   const browser = await chromium.launch();
 
   // Playwright contextに認証情報を適用
@@ -93,7 +148,8 @@ export async function analyzeUrl(
       version: AXE_VERSION,
       duration: axeResult.duration,
     });
-    console.log(`  [1/3] axe-core 完了: 違反${axeResult.violations.length}件, パス${axeResult.passes.length}件 (${axeResult.duration}ms)`);
+    emitLog(`  [1/4] axe-core 完了: 違反${axeResult.violations.length}件, パス${axeResult.passes.length}件 (${axeResult.duration}ms)`, onProgress);
+    emitViolations(axeResult.violations, onProgress);
   } catch (error) {
     await browser.close();
     if (error instanceof Error) {
@@ -116,7 +172,8 @@ export async function analyzeUrl(
   }
 
   // 2. Pa11y analysis
-  console.log('  [2/3] Pa11y 分析開始...');
+  emitProgress(2, 4, 'pa11y', onProgress);
+  emitLog('  [2/4] Pa11y 分析開始...', onProgress);
   try {
     // Pa11yに認証情報を渡す
     const pa11yAuthOptions = {
@@ -132,9 +189,10 @@ export async function analyzeUrl(
       version: PA11Y_VERSION,
       duration: pa11yResult.duration,
     });
-    console.log(`  [2/3] Pa11y 完了: 違反${pa11yResult.violations.length}件, 要確認${pa11yResult.incomplete.length}件 (${pa11yResult.duration}ms)`);
+    emitLog(`  [2/4] Pa11y 完了: 違反${pa11yResult.violations.length}件, 要確認${pa11yResult.incomplete.length}件 (${pa11yResult.duration}ms)`, onProgress);
+    emitViolations(pa11yResult.violations, onProgress);
   } catch (error) {
-    console.error('  [2/3] Pa11y エラー:', error);
+    emitLog(`  [2/4] Pa11y エラー: ${error}`, onProgress);
     toolsUsed.push({
       name: 'pa11y',
       version: PA11Y_VERSION,
@@ -143,7 +201,8 @@ export async function analyzeUrl(
   }
 
   // 3. Lighthouse analysis
-  console.log('  [3/3] Lighthouse 分析開始...');
+  emitProgress(3, 4, 'lighthouse', onProgress);
+  emitLog('  [3/4] Lighthouse 分析開始...', onProgress);
   try {
     // Lighthouseに認証ヘッダーを渡す
     const lighthouseAuthOptions = {
@@ -159,9 +218,10 @@ export async function analyzeUrl(
       version: LIGHTHOUSE_VERSION,
       duration: lighthouseResult.duration,
     });
-    console.log(`  [3/3] Lighthouse 完了: スコア Performance=${lighthouseResult.scores.performance}, A11y=${lighthouseResult.scores.accessibility} (${lighthouseResult.duration}ms)`);
+    emitLog(`  [3/4] Lighthouse 完了: スコア Performance=${lighthouseResult.scores.performance}, A11y=${lighthouseResult.scores.accessibility} (${lighthouseResult.duration}ms)`, onProgress);
+    emitViolations(lighthouseResult.violations, onProgress);
   } catch (error) {
-    console.error('  [3/3] Lighthouse エラー:', error);
+    emitLog(`  [3/4] Lighthouse エラー: ${error}`, onProgress);
     toolsUsed.push({
       name: 'lighthouse',
       version: LIGHTHOUSE_VERSION,
@@ -171,23 +231,24 @@ export async function analyzeUrl(
 
   const pageName = new URL(targetUrl).hostname;
   const totalDuration = toolsUsed.reduce((sum, t) => sum + t.duration, 0);
-  console.log(`  合計実行時間: ${(totalDuration / 1000).toFixed(1)}秒`);
+  emitLog(`  合計実行時間: ${(totalDuration / 1000).toFixed(1)}秒`, onProgress);
 
   // 4. AI総評生成（Gemini成功時のみ表示、フォールバックなし）
   let aiSummary: AISummary | undefined;
   if (lighthouseScores) {
-    console.log('  [4/4] AI総評生成開始...');
+    emitProgress(4, 4, 'ai-summary', onProgress);
+    emitLog('  [4/4] AI総評生成開始...', onProgress);
     try {
       const aiResult = await GeminiService.generateAISummary(allViolations, lighthouseScores);
       if (aiResult.success) {
         aiSummary = aiResult.value;
-        console.log('  [4/4] AI総評生成完了');
+        emitLog('  [4/4] AI総評生成完了', onProgress);
       } else {
-        console.warn(`  [4/4] AI総評生成失敗: ${aiResult.error.message}`);
+        emitLog(`  [4/4] AI総評生成失敗: ${aiResult.error.message}`, onProgress);
         // フォールバックなし - aiSummaryはundefinedのまま
       }
     } catch (error) {
-      console.error('  [4/4] AI総評生成エラー:', error);
+      emitLog(`  [4/4] AI総評生成エラー: ${error}`, onProgress);
       // フォールバックなし - aiSummaryはundefinedのまま
     }
   }

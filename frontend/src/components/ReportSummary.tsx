@@ -9,6 +9,7 @@ import Tab from '@mui/material/Tab';
 import Chip from '@mui/material/Chip';
 import LinkIcon from '@mui/icons-material/Link';
 import BuildIcon from '@mui/icons-material/Build';
+import DownloadIcon from '@mui/icons-material/Download';
 import { ScoreCard } from './ScoreCard';
 import { ImprovementList } from './ImprovementList';
 import { ViolationsTable } from './ViolationsTable';
@@ -17,6 +18,7 @@ import { IncompleteTable } from './IncompleteTable';
 import { LighthouseScores } from './LighthouseScores';
 import type { AccessibilityReport, RuleResult } from '../types/accessibility';
 import { calculateScores } from '../utils/scoreCalculator';
+import { exportAllResultsToCsv, type ResultWithPage } from '../utils/csvExport';
 
 interface ReportSummaryProps {
   report: AccessibilityReport;
@@ -54,6 +56,67 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
 
   // Truncate URL for display
   const displayUrl = url.length > 50 ? url.substring(0, 50) + '...' : url;
+
+  // CSV出力用に全結果を収集
+  const handleDownloadCsv = () => {
+    const allResults: ResultWithPage[] = [];
+
+    // 違反を追加
+    report.pages.forEach((page) => {
+      page.violations.forEach((v) => {
+        allResults.push({
+          resultType: '違反',
+          toolSource: v.toolSource || 'axe-core',
+          pageName: page.name,
+          pageUrl: page.url,
+          id: v.id,
+          description: v.description,
+          impact: v.impact,
+          nodeCount: v.nodeCount,
+          wcagCriteria: v.wcagCriteria,
+          helpUrl: v.helpUrl,
+        });
+      });
+    });
+
+    // パスを追加
+    report.pages.forEach((page) => {
+      page.passes.forEach((p) => {
+        allResults.push({
+          resultType: 'パス',
+          toolSource: p.toolSource || 'axe-core',
+          pageName: page.name,
+          pageUrl: page.url,
+          id: p.id,
+          description: p.description,
+          impact: p.impact,
+          nodeCount: p.nodeCount,
+          wcagCriteria: p.wcagCriteria,
+          helpUrl: p.helpUrl,
+        });
+      });
+    });
+
+    // 要確認を追加
+    report.pages.forEach((page) => {
+      page.incomplete.forEach((i) => {
+        allResults.push({
+          resultType: '要確認',
+          toolSource: i.toolSource || 'axe-core',
+          pageName: page.name,
+          pageUrl: page.url,
+          id: i.id,
+          description: i.description,
+          impact: i.impact,
+          nodeCount: i.nodeCount,
+          wcagCriteria: i.wcagCriteria,
+          helpUrl: i.helpUrl,
+        });
+      });
+    });
+
+    exportAllResultsToCsv(allResults, url);
+  };
 
   return (
     <Card sx={{ maxWidth: 1400, mx: 'auto', mb: 4 }}>
@@ -149,15 +212,25 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
 
         {/* Improvement List */}
-        <ImprovementList summary={scores.summary} violations={allViolations} />
+        <ImprovementList violations={allViolations} aiSummary={report.aiSummary} />
 
         {/* Divider */}
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
 
         {/* Detail Tabs */}
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          詳細結果
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6">
+            詳細結果
+          </Typography>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={handleDownloadCsv}
+          >
+            CSVダウンロード
+          </Button>
+        </Box>
         <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tabs
             value={tabValue}

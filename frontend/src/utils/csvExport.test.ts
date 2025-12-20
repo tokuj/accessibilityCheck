@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   generateCsvContent,
+  generateAllResultsCsvContent,
   escapeForCsv,
   generateFileName,
   exportViolationsToCsv,
+  exportAllResultsToCsv,
   type ViolationWithPage,
+  type ResultWithPage,
 } from './csvExport';
 
 describe('csvExport', () => {
@@ -130,15 +133,16 @@ describe('csvExport', () => {
       createElementMock = vi.fn().mockReturnValue(mockAnchor);
 
       // URLのスタティックメソッドのみモック、コンストラクタは維持
-      const OriginalURL = URL;
-      vi.stubGlobal('URL', class extends OriginalURL {
-        static createObjectURL = createObjectURLMock;
-        static revokeObjectURL = revokeObjectURLMock;
-      });
+      const OriginalURL = globalThis.URL;
+      const MockedURL = class extends OriginalURL {
+        static override createObjectURL = createObjectURLMock as unknown as typeof URL.createObjectURL;
+        static override revokeObjectURL = revokeObjectURLMock as unknown as typeof URL.revokeObjectURL;
+      };
+      vi.stubGlobal('URL', MockedURL);
 
-      vi.spyOn(document, 'createElement').mockImplementation(createElementMock);
-      vi.spyOn(document.body, 'appendChild').mockImplementation(appendChildMock);
-      vi.spyOn(document.body, 'removeChild').mockImplementation(removeChildMock);
+      vi.spyOn(document, 'createElement').mockImplementation(createElementMock as typeof document.createElement);
+      vi.spyOn(document.body, 'appendChild').mockImplementation(appendChildMock as typeof document.body.appendChild);
+      vi.spyOn(document.body, 'removeChild').mockImplementation(removeChildMock as typeof document.body.removeChild);
     });
 
     it('Blobを作成してダウンロードを実行する', () => {
@@ -182,6 +186,137 @@ describe('csvExport', () => {
 
       const mockAnchor = createElementMock.mock.results[0].value;
       expect(mockAnchor.download).toMatch(/^accessibility-report_example-com_\d{4}-\d{2}-\d{2}\.csv$/);
+    });
+  });
+
+  describe('generateAllResultsCsvContent', () => {
+    const sampleResults: ResultWithPage[] = [
+      {
+        resultType: '違反',
+        toolSource: 'axe-core',
+        pageName: 'トップページ',
+        pageUrl: 'https://example.com/',
+        id: 'color-contrast',
+        description: 'コントラスト不足',
+        impact: 'serious',
+        nodeCount: 3,
+        wcagCriteria: ['WCAG2AA.1.4.3'],
+        helpUrl: 'https://example.com/help',
+      },
+      {
+        resultType: 'パス',
+        toolSource: 'axe-core',
+        pageName: 'トップページ',
+        pageUrl: 'https://example.com/',
+        id: 'image-alt',
+        description: '画像にalt属性あり',
+        impact: undefined,
+        nodeCount: 5,
+        wcagCriteria: ['WCAG2AA.1.1.1'],
+        helpUrl: 'https://example.com/help2',
+      },
+      {
+        resultType: '要確認',
+        toolSource: 'pa11y',
+        pageName: 'お問い合わせ',
+        pageUrl: 'https://example.com/contact',
+        id: 'form-label',
+        description: 'フォームラベル確認必要',
+        impact: 'moderate',
+        nodeCount: 1,
+        wcagCriteria: ['WCAG2AA.1.3.1'],
+        helpUrl: 'https://example.com/help3',
+      },
+    ];
+
+    it('UTF-8 BOMで始まるCSVを生成する', () => {
+      const content = generateAllResultsCsvContent(sampleResults);
+      expect(content.startsWith('\uFEFF')).toBe(true);
+    });
+
+    it('ヘッダー行に結果種別を含む', () => {
+      const content = generateAllResultsCsvContent(sampleResults);
+      const lines = content.split('\n');
+      expect(lines[0]).toBe('\uFEFF結果種別,ツール,ページ名,ページURL,ルールID,説明,影響度,ノード数,WCAG項番,ヘルプURL');
+    });
+
+    it('結果種別が正しく出力される', () => {
+      const content = generateAllResultsCsvContent(sampleResults);
+      expect(content).toContain('違反');
+      expect(content).toContain('パス');
+      expect(content).toContain('要確認');
+    });
+
+    it('3件のデータを正しく出力する', () => {
+      const content = generateAllResultsCsvContent(sampleResults);
+      const lines = content.split('\n');
+      expect(lines.length).toBe(4); // ヘッダー + 3件のデータ
+    });
+
+    it('空の配列の場合はヘッダーのみ出力する', () => {
+      const content = generateAllResultsCsvContent([]);
+      const lines = content.split('\n');
+      expect(lines.length).toBe(1);
+    });
+  });
+
+  describe('exportAllResultsToCsv', () => {
+    let createObjectURLMock: ReturnType<typeof vi.fn>;
+    let revokeObjectURLMock: ReturnType<typeof vi.fn>;
+    let createElementMock: ReturnType<typeof vi.fn>;
+    let appendChildMock: ReturnType<typeof vi.fn>;
+    let removeChildMock: ReturnType<typeof vi.fn>;
+    let clickMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      createObjectURLMock = vi.fn().mockReturnValue('blob:http://localhost/mock-blob-url');
+      revokeObjectURLMock = vi.fn();
+      clickMock = vi.fn();
+      appendChildMock = vi.fn();
+      removeChildMock = vi.fn();
+
+      const mockAnchor = {
+        href: '',
+        download: '',
+        click: clickMock,
+        style: {},
+      };
+      createElementMock = vi.fn().mockReturnValue(mockAnchor);
+
+      // URLのスタティックメソッドのみモック、コンストラクタは維持
+      const OriginalURL = globalThis.URL;
+      const MockedURL = class extends OriginalURL {
+        static override createObjectURL = createObjectURLMock as unknown as typeof URL.createObjectURL;
+        static override revokeObjectURL = revokeObjectURLMock as unknown as typeof URL.revokeObjectURL;
+      };
+      vi.stubGlobal('URL', MockedURL);
+
+      vi.spyOn(document, 'createElement').mockImplementation(createElementMock as typeof document.createElement);
+      vi.spyOn(document.body, 'appendChild').mockImplementation(appendChildMock as typeof document.body.appendChild);
+      vi.spyOn(document.body, 'removeChild').mockImplementation(removeChildMock as typeof document.body.removeChild);
+    });
+
+    it('全結果をCSVとしてダウンロードできること', () => {
+      const results: ResultWithPage[] = [
+        {
+          resultType: '違反',
+          toolSource: 'axe-core',
+          pageName: 'トップページ',
+          pageUrl: 'https://example.com/',
+          id: 'color-contrast',
+          description: 'Test description',
+          impact: 'serious',
+          nodeCount: 1,
+          wcagCriteria: ['WCAG2AA.1.4.3'],
+          helpUrl: 'https://example.com/help',
+        },
+      ];
+
+      exportAllResultsToCsv(results, 'https://example.com/');
+
+      expect(createObjectURLMock).toHaveBeenCalled();
+      expect(clickMock).toHaveBeenCalled();
+      expect(revokeObjectURLMock).toHaveBeenCalled();
     });
   });
 });

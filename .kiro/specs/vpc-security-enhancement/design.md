@@ -40,7 +40,7 @@
 ```mermaid
 graph TB
     subgraph Internet
-        User[社内ユーザー]
+        User[ブラウザ]
         ExternalSite[分析対象サイト]
     end
 
@@ -52,9 +52,11 @@ graph TB
         subgraph LoadBalancer[External Application Load Balancer]
             FwRule[Forwarding Rule]
             TargetProxy[HTTPS Proxy]
-            URLMap[URL Map]
+            URLMap[URL Map<br>/* → Frontend<br>/api/* → Backend]
+            FrontendSvc[Frontend Backend Service]
             BackendSvc[Backend Service]
-            ServerlessNEG[Serverless NEG]
+            FrontendNEG[Frontend NEG]
+            BackendNEG[Backend NEG]
         end
 
         subgraph VPC[a11y-vpc]
@@ -68,15 +70,19 @@ graph TB
         end
     end
 
-    User -->|HTTPS| FwRule
+    User -->|HTTPS /*| FwRule
+    User -->|HTTPS /api/*| FwRule
     FwRule --> TargetProxy
     TargetProxy --> URLMap
-    URLMap --> BackendSvc
+    URLMap -->|/*| FrontendSvc
+    URLMap -->|/api/*| BackendSvc
+    WAF -.->|Policy| FrontendSvc
     WAF -.->|Policy| BackendSvc
-    BackendSvc --> ServerlessNEG
-    ServerlessNEG --> Frontend
+    FrontendSvc --> FrontendNEG
+    BackendSvc --> BackendNEG
+    FrontendNEG --> Frontend
+    BackendNEG --> Backend
 
-    Frontend -->|VPC Internal| Backend
     Backend --> Router
     Router --> NAT
     NAT --> StaticIP
@@ -86,14 +92,18 @@ graph TB
 **Architecture Integration**:
 - **Selected pattern**: VPC分離 + External ALB + Cloud Armor（既存VPCインフラを活用したゼロトラストネットワーク）
 - **Domain/feature boundaries**:
-  - バックエンド: VPC内部からのみアクセス可能（ingress=internal）
+  - バックエンド: Load Balancer経由のみアクセス可能（ingress=internal-and-cloud-load-balancing）
   - フロントエンド: Load Balancer経由のみアクセス可能（ingress=internal-and-cloud-load-balancing）
+- **URL Map routing**:
+  - `/*` → フロントエンド（a11y-frontend-backend）
+  - `/api/*` → バックエンド（a11y-backend-backend）
 - **Existing patterns preserved**:
   - Cloud NAT経由の外部通信（静的IP維持）
   - Direct VPC egressによるVPC接続
 - **New components rationale**:
   - External ALB: Cloud Armor適用に必須
   - Serverless NEG: Cloud RunをLoad Balancerバックエンドにするために必須
+  - URL Map path rules: フロントエンド（SPA）からバックエンドAPIへのルーティング
 - **Steering compliance**: 決定論的URL形式を継続使用
 
 ### Technology Stack
@@ -112,25 +122,33 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant User as 社内ユーザー
+    participant User as ブラウザ
     participant LB as Load Balancer
     participant CA as Cloud Armor
     participant FE as Frontend
     participant BE as Backend
     participant Site as 対象サイト
 
-    User->>LB: HTTPS Request
+    User->>LB: HTTPS Request (/*)
     LB->>CA: Check Security Policy
-
     alt 許可されたIP
         CA->>LB: Allow
-        LB->>FE: Forward Request
-        FE->>BE: API Call via VPC
+        LB->>FE: Forward to Frontend
+        FE-->>User: HTML/JS
+    else 許可されていないIP
+        CA->>LB: Deny 403
+        LB-->>User: 403 Forbidden
+    end
+
+    User->>LB: API Request (/api/*)
+    LB->>CA: Check Security Policy
+    alt 許可されたIP
+        CA->>LB: Allow
+        LB->>BE: Forward to Backend
         BE->>Site: Analyze via Cloud NAT
         Site-->>BE: Response
-        BE-->>FE: Analysis Result
-        FE-->>LB: HTML/JSON Response
-        LB-->>User: Response
+        BE-->>LB: Analysis Result
+        LB-->>User: JSON Response
     else 許可されていないIP
         CA->>LB: Deny 403
         LB-->>User: 403 Forbidden
@@ -214,7 +232,7 @@ sequenceDiagram
 ```bash
 gcloud run deploy a11y-check-api \
     --region asia-northeast1 \
-    --ingress internal \
+    --ingress internal-and-cloud-load-balancing \
     --network a11y-vpc \
     --subnet a11y-cloudrun-subnet \
     --vpc-egress all-traffic \
@@ -293,9 +311,11 @@ gcloud run deploy a11y-check-frontend \
 | Resource | Name | Configuration |
 |----------|------|---------------|
 | Static IP | a11y-frontend-ip | global, external |
-| Serverless NEG | a11y-frontend-neg | region: asia-northeast1, cloud-run-service: a11y-check-frontend |
-| Backend Service | a11y-frontend-backend | global, security-policy: internal-access-limited-policy |
-| URL Map | a11y-frontend-urlmap | default-service: a11y-frontend-backend |
+| Serverless NEG (Frontend) | a11y-frontend-neg | region: asia-northeast1, cloud-run-service: a11y-check-frontend |
+| Serverless NEG (Backend) | a11y-backend-neg | region: asia-northeast1, cloud-run-service: a11y-check-api |
+| Backend Service (Frontend) | a11y-frontend-backend | global, security-policy: internal-access-limited-policy |
+| Backend Service (Backend) | a11y-backend-backend | global, security-policy: internal-access-limited-policy |
+| URL Map | a11y-frontend-urlmap | default-service: a11y-frontend-backend, path-rule: /api/* → a11y-backend-backend |
 | Target HTTPS Proxy | a11y-frontend-https-proxy | url-map: a11y-frontend-urlmap, ssl-certificates: (managed) |
 | Forwarding Rule | a11y-frontend-https-rule | address: a11y-frontend-ip, target: a11y-frontend-https-proxy, port: 443 |
 

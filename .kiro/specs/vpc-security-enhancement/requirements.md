@@ -38,9 +38,9 @@ https://console.cloud.google.com/net-security/securitypolicies/details/internal-
 #### Acceptance Criteria
 
 1. The a11y-check-frontend shall バックエンドと同一のVPCコネクタ（a11y-connector）を使用してVPCに接続する
-2. When フロントエンドからバックエンドAPIへリクエストを送信する, the a11y-check-frontend shall VPCコネクタ経由で内部通信を行う
+2. When ブラウザからバックエンドAPIへリクエストを送信する, the リクエスト shall Load Balancer経由でCloud Armorポリシーを通過し、バックエンドに転送される
 3. The a11y-check-frontend shall Cloud Runの`--vpc-egress=all-traffic`設定によりすべての送信トラフィックをVPC経由にする
-4. When フロントエンドがバックエンドAPIを呼び出す, the フロントエンド shall 内部URLまたはCloud Run内部エンドポイントを使用する
+4. When フロントエンドがバックエンドAPIを呼び出す, the フロントエンド shall Load BalancerのURL（同一オリジン /api/*）を使用する
 
 ### Requirement 3: WAFによるアクセス制限
 

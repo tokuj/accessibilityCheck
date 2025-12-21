@@ -26,8 +26,8 @@ STATIC_IP_NAME="a11y-static-ip"
 
 # CORS設定
 # フロントエンドのホスティングURLを設定（複数指定可能：カンマ区切り）
-# 本番フロントエンドと開発環境（localhost:5173）の両方を許可
-FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://a11y-check-frontend-783872951114.asia-northeast1.run.app,http://localhost:5173}"
+# Load Balancer経由（本番）、Cloud Run直接（旧形式互換）、開発環境（localhost:5173）を許可
+FRONTEND_ORIGIN="${FRONTEND_ORIGIN:-https://a11y-check.itgprototype.com,https://a11y-check-frontend-783872951114.asia-northeast1.run.app,http://localhost:5173}"
 
 echo "=========================================="
 echo "Cloud Run デプロイ開始"
@@ -122,8 +122,8 @@ echo "=========================================="
 echo "Cloud Build経由でビルド中..."
 gcloud builds submit --tag ${REGISTRY}/${IMAGE_NAME}:latest .
 
-# Cloud Runにデプロイ（VPC egress設定付き + Secret Manager）
-echo "Cloud Runにデプロイ中（VPC egress: all-traffic）..."
+# Cloud Runにデプロイ（VPC egress設定付き + Secret Manager + Load Balancer経由アクセス許可）
+echo "Cloud Runにデプロイ中（VPC egress: all-traffic, ingress: internal-and-cloud-load-balancing）..."
 gcloud run deploy ${SERVICE_NAME} \
     --image ${REGISTRY}/${IMAGE_NAME}:latest \
     --region ${REGION} \
@@ -136,6 +136,7 @@ gcloud run deploy ${SERVICE_NAME} \
     --network=${VPC_NAME} \
     --subnet=${SUBNET_NAME} \
     --vpc-egress=all-traffic \
+    --ingress=internal-and-cloud-load-balancing \
     --set-secrets="GOOGLE_API_KEY=google_api_key_toku:latest" \
     --set-env-vars "^##^NODE_ENV=production##ALLOWED_ORIGINS=${FRONTEND_ORIGIN}"
 

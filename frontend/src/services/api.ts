@@ -114,7 +114,8 @@ export function analyzeUrlWithSSE(
   callbacks: SSECallbacks,
   options?: SSEAnalyzeOptions
 ): { cancel: () => void } {
-  const url = new URL(`${API_BASE_URL}/api/analyze-stream`);
+  const baseUrl = API_BASE_URL || window.location.origin;
+  const url = new URL(`${baseUrl}/api/analyze-stream`);
   url.searchParams.set('url', request.url);
 
   // セッションベース認証パラメータを追加

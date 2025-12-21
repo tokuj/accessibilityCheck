@@ -186,16 +186,49 @@ async function performFormLogin(config: AuthConfig, targetUrl: string): Promise<
     console.log('[FormLogin] 送信ボタンクリック完了');
 
     // ログイン成功を待つ
+    console.log('[FormLogin] ログイン成功判定開始...');
+
     if (config.successUrlPattern) {
-      console.log('[FormLogin] 成功URLパターン待機:', config.successUrlPattern);
+      // 方法1: successUrlPattern が指定されている場合はそれを使う
+      console.log('[FormLogin] successUrlPattern で判定:', config.successUrlPattern);
       await page.waitForURL(new RegExp(config.successUrlPattern), { timeout: 30000 });
     } else {
-      // ログインURLから離れるまで待つ（自動判定）
-      const loginUrl = config.loginUrl;
-      console.log('[FormLogin] ログインURLから離れるまで待機中... loginUrl:', loginUrl);
-      await page.waitForURL((url) => url.href !== loginUrl, { timeout: 30000 });
+      // 方法2: ログインフォームが消えるのを待つ（URL変化の有無に関わらず動作）
+      console.log('[FormLogin] ログインフォーム消失で判定');
+      console.log('[FormLogin] 監視セレクタ - username:', config.usernameSelector, ', password:', config.passwordSelector);
+
+      try {
+        // ユーザー名欄とパスワード欄の両方が消えるまで待つ
+        await Promise.race([
+          // フォームが消える（SPA/従来サイト両対応）
+          Promise.all([
+            page.locator(config.usernameSelector).waitFor({ state: 'detached', timeout: 30000 }),
+            page.locator(config.passwordSelector).waitFor({ state: 'detached', timeout: 30000 }),
+          ]),
+          // または hidden になる（同一ページでモーダルが閉じるパターン）
+          Promise.all([
+            page.locator(config.usernameSelector).waitFor({ state: 'hidden', timeout: 30000 }),
+            page.locator(config.passwordSelector).waitFor({ state: 'hidden', timeout: 30000 }),
+          ]),
+        ]);
+        console.log('[FormLogin] ログインフォーム消失を確認');
+      } catch (e) {
+        // フォームが消えない = ログイン失敗
+        console.log('[FormLogin] ログインフォームが消えませんでした');
+        throw new Error('ログインフォームが消えませんでした。認証情報を確認してください。');
+      }
     }
-    console.log('[FormLogin] ログイン後URL:', page.url());
+    console.log('[FormLogin] ログイン成功判定完了, URL:', page.url());
+
+    // ストレージへの書き込み完了を待つ（Cookie/localStorage）
+    console.log('[FormLogin] ストレージ書き込み完了を待機中...');
+    await context.storageState();
+
+    // IndexedDB書き込み完了を待つ（Firebase等の非同期認証用）
+    // storageState()はIndexedDBを待たないため、追加の待機が必要
+    console.log('[FormLogin] IndexedDB書き込み完了を待機中（2秒）...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    console.log('[FormLogin] ストレージ書き込み完了');
 
     // storageStateを保存
     const storageState = await context.storageState() as StorageState;

@@ -120,13 +120,48 @@ export async function analyzeUrl(
   let browser: import('playwright').Browser;
   let page: import('playwright').Page;
   let needsNewBrowser = true;
+  let alreadyNavigated = false;  // フォームログイン後に既にナビゲーション済みかどうか
 
   if (formLoginBrowser && formLoginPage) {
     // フォームログイン済みブラウザを使用（IndexedDB認証を保持）
     browser = formLoginBrowser;
     page = formLoginPage;
     needsNewBrowser = false;
-    console.log('[Analyzer] フォームログイン済みページでターゲットURLへ移動');
+
+    // 同一オリジンかチェック
+    const currentOrigin = new URL(page.url()).origin;
+    const targetOrigin = new URL(targetUrl).origin;
+
+    if (currentOrigin === targetOrigin) {
+      // 同一オリジン: SPAナビゲーション（フルリロードなし = Firebase認証を維持）
+      console.log('[Analyzer] SPAナビゲーション（フルリロードなし）:', targetUrl);
+      await page.evaluate((url) => {
+        window.history.pushState({}, '', url);
+        window.dispatchEvent(new Event('popstate'));
+      }, targetUrl);
+      // ルーターがコンテンツを更新するのを待つ
+      await page.waitForLoadState('networkidle');
+      console.log('[Analyzer] SPAナビゲーション完了, URL:', page.url());
+      alreadyNavigated = true;
+    } else {
+      // 別オリジン: page.goto() + Firebase認証復元待ち
+      console.log('[Analyzer] 別オリジンへ移動（フルリロード）:', targetUrl);
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      // Firebase認証の復元を待つ
+      try {
+        await page.waitForFunction(
+          () => (window as unknown as { firebase?: { auth?: () => { currentUser: unknown } } }).firebase?.auth?.().currentUser !== null,
+          { timeout: 10000 }
+        );
+        console.log('[Analyzer] Firebase認証復元確認');
+      } catch {
+        // Firebase が露出していない場合は networkidle で妥協
+        console.log('[Analyzer] Firebase認証確認不可、networkidleで待機');
+        await page.waitForLoadState('networkidle');
+      }
+      console.log('[Analyzer] 別オリジンナビゲーション完了, URL:', page.url());
+      alreadyNavigated = true;
+    }
   } else {
     // 新しいブラウザを起動
     browser = await chromium.launch();
@@ -163,8 +198,11 @@ export async function analyzeUrl(
   }
 
   try {
-    await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
-    console.log('[Analyzer] ターゲットURL読み込み完了:', page.url());
+    // フォームログインで既にナビゲーション済みの場合はスキップ
+    if (!alreadyNavigated) {
+      await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+      console.log('[Analyzer] ターゲットURL読み込み完了:', page.url());
+    }
 
     // Capture screenshot
     const screenshotBuffer = await page.screenshot({

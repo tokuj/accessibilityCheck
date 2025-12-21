@@ -9,13 +9,13 @@
 **Requirements Covered**: 4.1, 4.6, 1.5
 
 **Acceptance Criteria**:
-- [ ] `encrypt(data, passphrase)` が有効な暗号化結果を返す
-- [ ] `decrypt(encryptedData, passphrase)` が元データを正しく復元する
-- [ ] PBKDF2-SHA256で310,000反復の鍵導出を実装
-- [ ] 暗号化データフォーマット: [64-byte salt][12-byte IV][ciphertext][16-byte authTag]
-- [ ] 不正なパスフレーズで復号化失敗時に`invalid_passphrase`エラーを返す
-- [ ] 改ざんデータで復号化失敗時に`corrupted_data`エラーを返す
-- [ ] パスフレーズをログ・ファイルに出力しない
+- [x] `encrypt(data, passphrase)` が有効な暗号化結果を返す
+- [x] `decrypt(encryptedData, passphrase)` が元データを正しく復元する
+- [x] PBKDF2-SHA256で310,000反復の鍵導出を実装
+- [x] 暗号化データフォーマット: [12-byte IV][ciphertext][16-byte authTag]（saltは別途64バイト）
+- [x] 不正なパスフレーズで復号化失敗時に`invalid_passphrase`エラーを返す
+- [x] 改ざんデータで復号化失敗時に認証エラーを返す（GCMモードでは不正パスフレーズと区別不可）
+- [x] パスフレーズをログ・ファイルに出力しない
 
 **Files to Modify**:
 - `server/auth/crypto.ts` (新規作成)
@@ -39,16 +39,16 @@
 **Requirements Covered**: 1.4, 2.1, 5.1-5.5, 6.1
 
 **Acceptance Criteria**:
-- [ ] `save(sessionName, storageState, passphrase, options)` でセッションを暗号化保存
-- [ ] `load(sessionId, passphrase)` でセッションを復号化読み込み
-- [ ] `list()` でセッションメタデータ一覧を取得
-- [ ] `delete(sessionId)` でセッションを削除
-- [ ] セッションインデックス(`server/data/sessions/index.json`)を管理
-- [ ] セッションファイル(`server/data/sessions/{id}.enc`)を管理
-- [ ] セッション名はドメイン内で一意（重複時`duplicate_name`エラー）
-- [ ] SessionMetadataにschemaVersion, createdAt, updatedAt, expiresAtを含める
-- [ ] autoDestroyオプションをサポート
-- [ ] セッション数上限20を設定
+- [x] `save(sessionName, storageState, passphrase, options)` でセッションを暗号化保存
+- [x] `load(sessionId, passphrase)` でセッションを復号化読み込み
+- [x] `list()` でセッションメタデータ一覧を取得
+- [x] `delete(sessionId)` でセッションを削除
+- [x] セッションインデックス(`server/data/sessions/index.json`)を管理
+- [x] セッションファイル(`server/data/sessions/{id}.enc`)を管理
+- [x] セッション名はドメイン内で一意（重複時`duplicate_name`エラー）
+- [x] SessionMetadataにschemaVersion, createdAt, updatedAt, expiresAtを含める
+- [x] autoDestroyオプションをサポート
+- [x] セッション数上限20を設定
 
 **Files to Modify**:
 - `server/auth/storage-state-manager.ts` (新規作成)
@@ -73,16 +73,16 @@
 **Requirements Covered**: 2.1, 5.1-5.5
 
 **Acceptance Criteria**:
-- [ ] `GET /api/sessions` でセッション一覧を取得
-- [ ] `POST /api/sessions` でセッションを作成（暗号化保存）
-- [ ] `GET /api/sessions/:id` でセッションメタデータを取得
-- [ ] `DELETE /api/sessions/:id` でセッションを削除
-- [ ] `POST /api/sessions/:id/load` でセッションを復号化読み込み
-- [ ] 400: パスフレーズ空、セッション名無効
-- [ ] 401: パスフレーズ不正（復号化失敗）
-- [ ] 404: セッション存在しない
-- [ ] 409: セッション名重複
-- [ ] 500: I/Oエラー
+- [x] `GET /api/sessions` でセッション一覧を取得
+- [x] `POST /api/sessions` でセッションを作成（暗号化保存）
+- [x] `GET /api/sessions/:id` でセッションメタデータを取得
+- [x] `DELETE /api/sessions/:id` でセッションを削除
+- [x] `POST /api/sessions/:id/load` でセッションを復号化読み込み
+- [x] 400: パスフレーズ空、セッション名無効
+- [x] 401: パスフレーズ不正（復号化失敗）
+- [x] 404: セッション存在しない
+- [x] 409: セッション名重複
+- [x] 500: I/Oエラー
 
 **Files to Modify**:
 - `server/routes/sessions.ts` (新規作成)
@@ -104,15 +104,15 @@
 **Requirements Covered**: 5.2-5.4, 7.1, 7.4, 7.6
 
 **Acceptance Criteria**:
-- [ ] セッション一覧をドロップダウンで表示
-- [ ] セッション選択時に親コンポーネントに通知
-- [ ] 各セッションにロックアイコンを表示
-- [ ] ホバー時にドメイン、認証タイプ、有効期限をツールチップ表示
-- [ ] セッション削除ボタンと確認ダイアログ
-- [ ] 認証状態インジケーター（未認証/認証済み/期限切れ）を表示
-- [ ] 「ログイン記録」ボタンを表示（開発環境のみ有効）
-- [ ] 「再認証」ボタンを表示（期限切れ時）
-- [ ] ローディング状態とエラー状態を表示
+- [x] セッション一覧をドロップダウンで表示
+- [x] セッション選択時に親コンポーネントに通知
+- [x] 各セッションにロックアイコンを表示
+- [x] ホバー時にドメイン、認証タイプ、有効期限をツールチップ表示
+- [x] セッション削除ボタンと確認ダイアログ
+- [x] 認証状態インジケーター（未認証/認証済み/期限切れ）を表示
+- [x] 「ログイン記録」ボタンを表示（開発環境のみ有効）
+- [x] 「再認証」ボタンを表示（期限切れ時）
+- [x] ローディング状態とエラー状態を表示
 
 **Files to Modify**:
 - `frontend/src/components/SessionManager.tsx` (新規作成)
@@ -136,11 +136,11 @@
 **Requirements Covered**: 2.2, 7.5
 
 **Acceptance Criteria**:
-- [ ] UrlInputにSessionManagerUIを組み込み
-- [ ] セッション選択時にselectedSessionIdを管理
-- [ ] 検証開始時にセッションIDとパスフレーズをAPIに送信
-- [ ] 既存のAuthSettings（手動認証）との共存
-- [ ] 認証方式選択UI（セッション/手動）を提供
+- [x] UrlInputにSessionManagerUIを組み込み
+- [x] セッション選択時にselectedSessionIdを管理
+- [x] 検証開始時にセッションIDとパスフレーズをAPIに送信
+- [x] 既存のAuthSettings（手動認証）との共存
+- [x] 認証方式選択UI（セッション/手動）を提供
 
 **Files to Modify**:
 - `frontend/src/components/UrlInput.tsx` (SessionManager統合)
@@ -162,12 +162,12 @@
 **Requirements Covered**: 2.2, 2.3, 2.4
 
 **Acceptance Criteria**:
-- [ ] リクエストボディまたはクエリからセッションIDとパスフレーズを受け取る
-- [ ] StorageStateManagerでセッションを復号化
-- [ ] 復号化成功時はstorageStateをPlaywrightコンテキストに適用
-- [ ] 復号化失敗時はSSEでエラーイベントを送信
-- [ ] 401/403エラー検出時はSSEで`session_expired`イベントを送信
-- [ ] 既存のクエリパラメータ認証との後方互換性維持
+- [x] リクエストボディまたはクエリからセッションIDとパスフレーズを受け取る
+- [x] StorageStateManagerでセッションを復号化
+- [x] 復号化成功時はstorageStateをPlaywrightコンテキストに適用
+- [x] 復号化失敗時はSSEでエラーイベントを送信
+- [x] 401/403エラー検出時はSSEで`session_expired`イベントを送信
+- [x] 既存のクエリパラメータ認証との後方互換性維持
 
 **Files to Modify**:
 - `server/sse-handler.ts` (セッションパース・適用ロジック追加)
@@ -192,15 +192,15 @@
 **Requirements Covered**: 1.1-1.3, 2.5, 3.3, 4.3
 
 **Acceptance Criteria**:
-- [ ] `startLogin(loginUrl, options)` でheadedブラウザを起動
-- [ ] Chromium headedモード（`headless: false`）で起動
-- [ ] 環境変数`ALLOW_HEADED_BROWSER`でheaded許可を制御
-- [ ] headless環境では`headless_environment`エラーを返す
-- [ ] `captureSession(loginSessionId, sessionName, passphrase)` でstorageStateをキャプチャ
-- [ ] キャプチャ後にStorageStateManagerでセッション保存
-- [ ] `cancelLogin(loginSessionId)` でブラウザを閉じる
-- [ ] 同時に1つのLoginSessionのみアクティブ
-- [ ] タイムアウト設定（デフォルト5分）
+- [x] `startLogin(loginUrl, options)` でheadedブラウザを起動
+- [x] Chromium headedモード（`headless: false`）で起動
+- [x] 環境変数`ALLOW_HEADED_BROWSER`でheaded許可を制御
+- [x] headless環境では`headless_environment`エラーを返す
+- [x] `captureSession(loginSessionId, sessionName, passphrase)` でstorageStateをキャプチャ
+- [x] キャプチャ後にStorageStateManagerでセッション保存
+- [x] `cancelLogin(loginSessionId)` でブラウザを閉じる
+- [x] 同時に1つのLoginSessionのみアクティブ
+- [x] タイムアウト設定（デフォルト5分）
 
 **Files to Modify**:
 - `server/auth/interactive-login.ts` (新規作成)
@@ -223,12 +223,12 @@
 **Requirements Covered**: 1.1-1.4
 
 **Acceptance Criteria**:
-- [ ] `POST /api/auth/interactive-login` でログインセッション開始
-- [ ] `POST /api/auth/capture-session` でセッションキャプチャ
-- [ ] `DELETE /api/auth/interactive-login` でログインセッションキャンセル
-- [ ] 400: loginUrlが無効
-- [ ] 404: ログインセッションが存在しない
-- [ ] 503: headedブラウザ環境が利用不可
+- [x] `POST /api/auth/interactive-login` でログインセッション開始
+- [x] `POST /api/auth/capture-session` でセッションキャプチャ
+- [x] `DELETE /api/auth/interactive-login` でログインセッションキャンセル
+- [x] 400: loginUrlが無効
+- [x] 404: ログインセッションが存在しない
+- [x] 503: headedブラウザ環境が利用不可
 
 **Files to Modify**:
 - `server/routes/auth.ts` (新規作成またはinteractive-login部分追加)
@@ -250,14 +250,14 @@
 **Requirements Covered**: 7.1-7.3
 
 **Acceptance Criteria**:
-- [ ] 「ログイン記録」ボタンでログインURL入力ダイアログを表示
-- [ ] ブラウザ起動中は「ブラウザでログインしてください」メッセージ表示
-- [ ] 「ログイン完了」ボタンでキャプチャ実行
-- [ ] セッション名とパスフレーズ入力ダイアログ
-- [ ] 成功時はトースト「ログイン記録完了」表示
-- [ ] 失敗時はエラーメッセージ表示
-- [ ] キャンセルボタンでブラウザを閉じる
-- [ ] 開発環境でのみ「ログイン記録」ボタンを有効化
+- [x] 「ログイン記録」ボタンでログインURL入力ダイアログを表示
+- [x] ブラウザ起動中は「ブラウザでログインしてください」メッセージ表示
+- [x] 「ログイン完了」ボタンでキャプチャ実行
+- [x] セッション名とパスフレーズ入力ダイアログ
+- [x] 成功時はトースト「ログイン記録完了」表示
+- [x] 失敗時はエラーメッセージ表示
+- [x] キャンセルボタンでブラウザを閉じる
+- [x] 開発環境でのみ「ログイン記録」ボタンを有効化
 
 **Files to Modify**:
 - `frontend/src/components/InteractiveLoginDialog.tsx` (新規作成)
@@ -281,11 +281,11 @@
 **Requirements Covered**: 4.1, 2.1
 
 **Acceptance Criteria**:
-- [ ] セッション選択時にパスフレーズ入力ダイアログを表示
-- [ ] パスワード入力フィールド（表示/非表示切り替え）
-- [ ] 「このセッションのパスフレーズを記憶」オプション（sessionStorage）
-- [ ] 不正パスフレーズ時はエラーメッセージ表示
-- [ ] キャンセルでセッション選択を解除
+- [x] セッション選択時にパスフレーズ入力ダイアログを表示
+- [x] パスワード入力フィールド（表示/非表示切り替え）
+- [x] 「このセッションのパスフレーズを記憶」オプション（sessionStorage）
+- [x] 不正パスフレーズ時はエラーメッセージ表示
+- [x] キャンセルでセッション選択を解除
 
 **Files to Modify**:
 - `frontend/src/components/PassphraseDialog.tsx` (新規作成)
@@ -310,11 +310,11 @@
 **Requirements Covered**: 2.4, 6.3, 7.6
 
 **Acceptance Criteria**:
-- [ ] SessionManagerUIで期限切れセッションに警告アイコン表示
-- [ ] 401/403エラー時にSSEで`session_expired`イベント受信
-- [ ] 「セッション期限切れ - 再ログインしますか？」確認ダイアログ表示
-- [ ] 「再認証」ボタンでインタラクティブログインダイアログ表示
-- [ ] 再ログイン成功時に既存セッションを更新
+- [x] SessionManagerUIで期限切れセッションに警告アイコン表示
+- [x] 401/403エラー時にSSEで`session_expired`イベント受信
+- [x] 「セッション期限切れ - 再ログインしますか？」確認ダイアログ表示
+- [x] 「再認証」ボタンでインタラクティブログインダイアログ表示
+- [x] 再ログイン成功時に既存セッションを更新
 
 **Files to Modify**:
 - `frontend/src/components/SessionManager.tsx` (期限切れ表示追加)
@@ -337,10 +337,10 @@
 **Requirements Covered**: 3.1, 7.5
 
 **Acceptance Criteria**:
-- [ ] 認証方式選択に「保存済みセッション」オプション追加
-- [ ] 「保存済みセッション」選択時はSessionManager表示
-- [ ] 既存のBasic/Form/Bearer/Cookie認証UIを維持
-- [ ] 認証方式切り替え時に状態をリセット
+- [x] 認証方式選択に「保存済みセッション」オプション追加
+- [x] 「保存済みセッション」選択時はSessionManager表示
+- [x] 既存のBasic/Form/Bearer/Cookie認証UIを維持
+- [x] 認証方式切り替え時に状態をリセット
 
 **Files to Modify**:
 - `frontend/src/components/AuthSettings.tsx` (セッション選択オプション追加)
@@ -361,10 +361,10 @@
 **Requirements Covered**: 全要件
 
 **Acceptance Criteria**:
-- [ ] セッション作成・読み込み・削除のE2Eフロー
-- [ ] 認証済みセッションでのアクセシビリティ検証フロー
-- [ ] パスフレーズ入力フロー
-- [ ] エラーケースのテスト（不正パスフレーズ等）
+- [x] セッション作成・読み込み・削除のE2Eフロー
+- [x] 認証済みセッションでのアクセシビリティ検証フロー
+- [x] パスフレーズ入力フロー
+- [x] エラーケースのテスト（不正パスフレーズ等）
 
 **Files to Modify**:
 - `tests/session-management.spec.ts` (新規作成)
@@ -383,9 +383,9 @@
 **Requirements Covered**: 全要件
 
 **Acceptance Criteria**:
-- [ ] README.mdにセッション管理機能の概要追加
-- [ ] API仕様ドキュメント（OpenAPI形式推奨）
-- [ ] セキュリティ考慮事項のドキュメント
+- [x] README.mdにセッション管理機能の概要追加
+- [x] API仕様ドキュメント（OpenAPI形式推奨）
+- [x] セキュリティ考慮事項のドキュメント
 
 **Files to Modify**:
 - `README.md` (機能説明追加)

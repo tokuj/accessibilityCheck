@@ -4,6 +4,8 @@ import { analyzeUrl, type AuthConfig, type ProgressCallback } from './analyzer';
 import { getCorsConfig } from './cors-config';
 import { createSSEHandler, parseAuthFromQuery } from './sse-handler';
 import type { SSEEvent } from './analyzers/sse-types';
+import { createSessionsRouter } from './routes/sessions';
+import { storageStateManager } from './auth/storage-state-manager';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -59,10 +61,13 @@ app.get('/api/health', (_, res) => {
 });
 
 // SSEストリーミングエンドポイント
-const sseHandler = createSSEHandler(async (url, auth, onProgress, _res) => {
-  return await analyzeUrl(url, auth, onProgress);
+const sseHandler = createSSEHandler(async (url, auth, onProgress, _res, storageState) => {
+  return await analyzeUrl(url, auth, onProgress, storageState);
 });
 app.get('/api/analyze-stream', sseHandler);
+
+// Session Management API
+app.use('/api/sessions', createSessionsRouter(storageStateManager));
 
 // 外部IPアドレス確認用エンドポイント（固定IP確認用）
 app.get('/api/egress-ip', async (_, res) => {

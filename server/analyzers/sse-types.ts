@@ -52,9 +52,18 @@ export interface ErrorEvent {
 }
 
 /**
+ * SSEセッション期限切れイベント
+ * 401/403エラー検出時に送信
+ */
+export interface SessionExpiredEvent {
+  type: 'session_expired';
+  message: string;
+}
+
+/**
  * 全SSEイベントのユニオン型
  */
-export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent;
+export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent;
 
 /**
  * 進捗コールバック関数の型

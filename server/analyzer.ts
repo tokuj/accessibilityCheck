@@ -4,13 +4,13 @@ import { analyzeWithAxe, AXE_VERSION } from './analyzers/axe';
 import { analyzeWithPa11y, PA11Y_VERSION } from './analyzers/pa11y';
 import { analyzeWithLighthouse, LIGHTHOUSE_VERSION } from './analyzers/lighthouse';
 import { AuthManager } from './auth/manager';
-import type { AuthConfig } from './auth/types';
+import type { AuthConfig, StorageState } from './auth/types';
 import { GeminiService } from './services/gemini';
 import type { ProgressCallback, SSEEvent } from './analyzers/sse-types';
 
 // Re-export types for backward compatibility
 export type { RuleResult, AccessibilityReport } from './analyzers/types';
-export type { AuthConfig } from './auth/types';
+export type { AuthConfig, StorageState } from './auth/types';
 export type { ProgressCallback } from './analyzers/sse-types';
 
 export interface PageResult {
@@ -75,7 +75,8 @@ function emitViolations(violations: RuleResult[], onProgress?: ProgressCallback)
 export async function analyzeUrl(
   targetUrl: string,
   authConfig?: AuthConfig,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  externalStorageState?: StorageState
 ): Promise<AccessibilityReport> {
   const toolsUsed: ToolInfo[] = [];
   let allViolations: RuleResult[] = [];
@@ -87,8 +88,12 @@ export async function analyzeUrl(
   // 認証マネージャーを初期化
   const authManager = new AuthManager(authConfig, targetUrl);
 
-  // 認証が必要な場合、認証を実行
-  if (authManager.requiresAuth()) {
+  // 外部から渡されたstorageStateがある場合はそれを設定
+  if (externalStorageState) {
+    authManager.setStorageState(externalStorageState);
+    emitLog('  セッションベース認証を使用', onProgress);
+  } else if (authManager.requiresAuth()) {
+    // 認証が必要な場合、認証を実行
     emitLog('  認証処理を開始...', onProgress);
     const authResult = await authManager.authenticate();
     if (!authResult.success) {

@@ -22,16 +22,37 @@ const getAuthTypeLabel = (type?: AuthType): string => {
 };
 
 interface UrlInputProps {
-  onAnalyze: (url: string, auth?: AuthConfig) => void;
+  /**
+   * 分析開始時のコールバック
+   * @param url 分析対象URL
+   * @param auth 手動認証設定（オプション）
+   * @param sessionId セッションID（オプション）
+   * @param passphrase セッションのパスフレーズ（オプション）
+   */
+  onAnalyze: (url: string, auth?: AuthConfig, sessionId?: string, passphrase?: string) => void;
   disabled?: boolean;
   compact?: boolean;
   initialValue?: string;
+  /** セッション管理UIを表示するかどうか（デフォルト: false - 後方互換性のため） */
+  showSessionManager?: boolean;
+  /** 開発環境フラグ（ログイン記録ボタン表示用） */
+  isDevelopment?: boolean;
 }
 
-export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = '' }: UrlInputProps) {
+export function UrlInput({
+  onAnalyze,
+  disabled,
+  compact = false,
+  initialValue = '',
+  showSessionManager = false,
+  isDevelopment = false,
+}: UrlInputProps) {
   const [url, setUrl] = useState(initialValue);
   const [authConfig, setAuthConfig] = useState<AuthConfig | undefined>(undefined);
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  // セッション管理用の状態
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [sessionPassphrase, setSessionPassphrase] = useState<string | undefined>(undefined);
 
   const validateUrl = (value: string): boolean => {
     try {
@@ -58,10 +79,28 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
       return;
     }
 
-    onAnalyze(targetUrl, authConfig);
+    // セッション選択時はセッションIDとパスフレーズを渡す
+    if (selectedSessionId) {
+      onAnalyze(targetUrl, undefined, selectedSessionId, sessionPassphrase);
+    } else {
+      onAnalyze(targetUrl, authConfig);
+    }
+  };
+
+  // セッション選択ハンドラー
+  const handleSessionSelect = (sessionId: string | null) => {
+    setSelectedSessionId(sessionId);
+    if (sessionId) {
+      // セッション選択時はパスフレーズを設定（現時点では空文字列として初期化）
+      // 実際のパスフレーズ入力は Task 10 で実装予定
+      setSessionPassphrase('');
+    } else {
+      setSessionPassphrase(undefined);
+    }
   };
 
   const hasAuth = authConfig && authConfig.type !== 'none';
+  const hasSession = !!selectedSessionId;
 
   return (
     <>
@@ -82,21 +121,31 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
           border: '1px solid rgba(0, 0, 0, 0.06)',
         }}
       >
-        <Tooltip title={hasAuth ? `認証設定済み (${getAuthTypeLabel(authConfig?.type)})` : '認証設定'}>
+        <Tooltip
+          title={
+            hasSession
+              ? 'セッション認証使用中'
+              : hasAuth
+                ? `認証設定済み (${getAuthTypeLabel(authConfig?.type)})`
+                : '認証設定'
+          }
+          aria-label="認証設定"
+        >
           <IconButton
             onClick={() => setAuthDialogOpen(true)}
             disabled={disabled}
+            aria-label="認証設定"
             sx={{
               mr: 1,
-              color: hasAuth ? 'success.main' : 'text.secondary',
+              color: hasSession ? 'primary.main' : hasAuth ? 'success.main' : 'text.secondary',
             }}
           >
             <Badge
-              color="success"
+              color={hasSession ? 'primary' : 'success'}
               variant="dot"
-              invisible={!hasAuth}
+              invisible={!hasAuth && !hasSession}
             >
-              {hasAuth ? <LockIcon /> : <LockOpenIcon />}
+              {hasAuth || hasSession ? <LockIcon /> : <LockOpenIcon />}
             </Badge>
           </IconButton>
         </Tooltip>
@@ -140,6 +189,10 @@ export function UrlInput({ onAnalyze, disabled, compact = false, initialValue = 
         onClose={() => setAuthDialogOpen(false)}
         authConfig={authConfig}
         onSave={setAuthConfig}
+        // セッション機能が有効な場合のみセッション関連propsを渡す
+        onSessionSelect={showSessionManager ? handleSessionSelect : undefined}
+        selectedSessionId={showSessionManager ? selectedSessionId : undefined}
+        isDevelopment={isDevelopment}
       />
     </>
   );

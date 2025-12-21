@@ -12,13 +12,27 @@ import MenuItem from '@mui/material/MenuItem';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
 import type { AuthConfig, AuthType } from '../types/accessibility';
+import { SessionManager } from './SessionManager';
+
+// 認証モード（手動認証 or セッション）
+type AuthMode = 'manual' | 'session';
 
 interface AuthSettingsProps {
   open: boolean;
   onClose: () => void;
   authConfig: AuthConfig | undefined;
   onSave: (config: AuthConfig | undefined) => void;
+  // セッション関連props（オプション - 後方互換性）
+  /** セッション選択時のコールバック */
+  onSessionSelect?: (sessionId: string | null, passphrase?: string) => void;
+  /** 選択中のセッションID */
+  selectedSessionId?: string | null;
+  /** 開発環境フラグ */
+  isDevelopment?: boolean;
+  /** ログイン記録ボタンクリック時のコールバック */
+  onRecordLogin?: () => void;
 }
 
 const AUTH_TYPE_LABELS: Record<AuthType, string> = {
@@ -33,14 +47,43 @@ const defaultConfig: AuthConfig = {
   type: 'none',
 };
 
-export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettingsProps) {
+export function AuthSettings({
+  open,
+  onClose,
+  authConfig,
+  onSave,
+  onSessionSelect,
+  selectedSessionId,
+  isDevelopment = false,
+  onRecordLogin,
+}: AuthSettingsProps) {
   const [config, setConfig] = useState<AuthConfig>(authConfig || defaultConfig);
+  // 認証モード（セッション機能が有効な場合のみ使用）
+  const [authMode, setAuthMode] = useState<AuthMode>(
+    selectedSessionId ? 'session' : 'manual'
+  );
+
+  // セッション機能が有効かどうか（onSessionSelectが渡されている場合）
+  const sessionEnabled = !!onSessionSelect;
 
   useEffect(() => {
     if (open) {
       setConfig(authConfig || defaultConfig);
+      // 選択中のセッションがあればセッションモードに
+      setAuthMode(selectedSessionId ? 'session' : 'manual');
     }
-  }, [open, authConfig]);
+  }, [open, authConfig, selectedSessionId]);
+
+  const handleAuthModeChange = (mode: AuthMode) => {
+    setAuthMode(mode);
+    if (mode === 'manual') {
+      // 手動認証に切り替え時はセッション選択を解除
+      onSessionSelect?.(null);
+    } else {
+      // セッションモードに切り替え時は手動認証設定をクリア
+      setConfig(defaultConfig);
+    }
+  };
 
   const handleTypeChange = (type: AuthType) => {
     setConfig({ ...config, type });
@@ -65,26 +108,68 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
     onClose();
   };
 
+  // セッション選択ハンドラー
+  const handleSessionSelect = (sessionId: string | null) => {
+    onSessionSelect?.(sessionId);
+  };
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>認証設定</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <FormControl fullWidth>
-            <InputLabel id="auth-type-label">認証タイプ</InputLabel>
-            <Select
-              labelId="auth-type-label"
-              value={config.type}
-              label="認証タイプ"
-              onChange={(e) => handleTypeChange(e.target.value as AuthType)}
-            >
-              {Object.entries(AUTH_TYPE_LABELS).map(([value, label]) => (
-                <MenuItem key={value} value={value}>
-                  {label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          {/* セッション機能が有効な場合、認証モード選択を表示 */}
+          {sessionEnabled && (
+            <>
+              <FormControl fullWidth>
+                <InputLabel id="auth-mode-label">認証方式</InputLabel>
+                <Select
+                  labelId="auth-mode-label"
+                  value={authMode}
+                  label="認証方式"
+                  onChange={(e) => handleAuthModeChange(e.target.value as AuthMode)}
+                >
+                  <MenuItem value="session">保存済みセッション</MenuItem>
+                  <MenuItem value="manual">手動認証設定</MenuItem>
+                </Select>
+              </FormControl>
+
+              {authMode === 'session' && (
+                <Box sx={{ mt: 1 }}>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    保存済みのセッションを選択してください。セッションには認証済みのCookie/トークンが暗号化して保存されています。
+                  </Alert>
+                  <SessionManager
+                    onSessionSelect={handleSessionSelect}
+                    selectedSessionId={selectedSessionId}
+                    isDevelopment={isDevelopment}
+                    onRecordLogin={onRecordLogin}
+                  />
+                </Box>
+              )}
+
+              <Divider sx={{ my: 1 }} />
+            </>
+          )}
+
+          {/* 手動認証設定（セッションモードでない場合、またはセッション機能が無効な場合） */}
+          {(authMode === 'manual' || !sessionEnabled) && (
+            <>
+              <FormControl fullWidth>
+                <InputLabel id="auth-type-label">認証タイプ</InputLabel>
+                <Select
+                  labelId="auth-type-label"
+                  value={config.type}
+                  label="認証タイプ"
+                  onChange={(e) => handleTypeChange(e.target.value as AuthType)}
+                >
+                  {Object.entries(AUTH_TYPE_LABELS).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
 
           {config.type === 'cookie' && (
             <>
@@ -206,6 +291,8 @@ export function AuthSettings({ open, onClose, authConfig, onSave }: AuthSettings
                 size="small"
                 helperText="ログイン成功後に遷移するURLのパターンを指定（省略可）"
               />
+            </>
+          )}
             </>
           )}
         </Box>

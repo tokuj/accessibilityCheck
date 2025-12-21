@@ -88,6 +88,10 @@ export async function analyzeUrl(
   // 認証マネージャーを初期化
   const authManager = new AuthManager(authConfig, targetUrl);
 
+  // フォームログインで使用するブラウザ（ある場合）
+  let formLoginBrowser: import('playwright').Browser | null = null;
+  let formLoginPage: import('playwright').Page | null = null;
+
   // 外部から渡されたstorageStateがある場合はそれを設定
   if (externalStorageState) {
     authManager.setStorageState(externalStorageState);
@@ -99,42 +103,68 @@ export async function analyzeUrl(
     if (!authResult.success) {
       throw new Error(`認証に失敗しました: ${authResult.error}`);
     }
+    // フォームログインの場合、ブラウザとページを取得
+    if (authResult.browser && authResult.page) {
+      formLoginBrowser = authResult.browser;
+      formLoginPage = authResult.page;
+      console.log('[Analyzer] フォームログイン済みブラウザを使用');
+    }
     emitLog('  認証処理完了', onProgress);
   }
 
   // 1. axe-core analysis with Playwright
   emitProgress(1, 4, 'axe-core', onProgress);
   emitLog('  [1/4] axe-core 分析開始...', onProgress);
-  const browser = await chromium.launch();
 
-  // Playwright contextに認証情報を適用
-  const contextOptions: Parameters<typeof browser.newContext>[0] = {
-    viewport: { width: 1280, height: 720 },
-  };
+  // フォームログインのブラウザがある場合はそれを使用、なければ新規起動
+  let browser: import('playwright').Browser;
+  let page: import('playwright').Page;
+  let needsNewBrowser = true;
 
-  // storageStateを適用（Cookie/localStorageを復元）
-  const storageState = authManager.getStorageState();
-  if (storageState) {
-    contextOptions.storageState = storageState;
+  if (formLoginBrowser && formLoginPage) {
+    // フォームログイン済みブラウザを使用（IndexedDB認証を保持）
+    browser = formLoginBrowser;
+    page = formLoginPage;
+    needsNewBrowser = false;
+    console.log('[Analyzer] フォームログイン済みページでターゲットURLへ移動');
+  } else {
+    // 新しいブラウザを起動
+    browser = await chromium.launch();
+
+    // Playwright contextに認証情報を適用
+    const contextOptions: Parameters<typeof browser.newContext>[0] = {
+      viewport: { width: 1280, height: 720 },
+    };
+
+    // storageStateを適用（Cookie/localStorageを復元）
+    const storageState = authManager.getStorageState();
+    if (storageState) {
+      contextOptions.storageState = storageState;
+      console.log('[Analyzer] storageState適用 - cookies数:', storageState.cookies?.length || 0);
+      console.log('[Analyzer] storageState適用 - origins数:', storageState.origins?.length || 0);
+    } else {
+      console.log('[Analyzer] storageStateなし');
+    }
+
+    // Basic認証のcredentialsを適用
+    const httpCredentials = authManager.getHttpCredentials();
+    if (httpCredentials) {
+      contextOptions.httpCredentials = httpCredentials;
+    }
+
+    // 認証ヘッダーを適用
+    const authHeaders = authManager.getHeaders();
+    if (Object.keys(authHeaders).length > 0) {
+      contextOptions.extraHTTPHeaders = authHeaders;
+    }
+
+    const context = await browser.newContext(contextOptions);
+    page = await context.newPage();
   }
-
-  // Basic認証のcredentialsを適用
-  const httpCredentials = authManager.getHttpCredentials();
-  if (httpCredentials) {
-    contextOptions.httpCredentials = httpCredentials;
-  }
-
-  // 認証ヘッダーを適用
-  const authHeaders = authManager.getHeaders();
-  if (Object.keys(authHeaders).length > 0) {
-    contextOptions.extraHTTPHeaders = authHeaders;
-  }
-
-  const context = await browser.newContext(contextOptions);
-  const page = await context.newPage();
 
   try {
-    await page.goto(targetUrl, { waitUntil: 'load', timeout: 60000 });
+    await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+    console.log('[Analyzer] ターゲットURL読み込み完了:', page.url());
 
     // Capture screenshot
     const screenshotBuffer = await page.screenshot({

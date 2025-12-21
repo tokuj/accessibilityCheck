@@ -120,11 +120,17 @@ export class FormAnalyzerService {
       }
 
       // フォーム要素を検出
+      console.log('[FormAnalyzer] フォーム要素検出開始');
       const [usernameFields, passwordFields, submitButtons] = await Promise.all([
         this.detectUsernameFields(page),
         this.detectPasswordFields(page),
         this.detectSubmitButtons(page),
       ]);
+      console.log('[FormAnalyzer] 検出結果:', {
+        usernameFields: usernameFields.map(f => ({ selector: f.selector, label: f.label })),
+        passwordFields: passwordFields.map(f => ({ selector: f.selector, label: f.label })),
+        submitButtons: submitButtons.map(f => ({ selector: f.selector, label: f.label })),
+      });
 
       // パスワードフィールドが見つからない場合はエラー
       if (passwordFields.length === 0) {
@@ -323,10 +329,11 @@ export class FormAnalyzerService {
   private async extractButtonInfo(
     element: ReturnType<Page['locator']>
   ): Promise<FormFieldCandidate> {
-    const [name, id, type] = await Promise.all([
+    const [name, id, type, tagName] = await Promise.all([
       element.getAttribute('name'),
       element.getAttribute('id'),
       element.getAttribute('type'),
+      element.evaluate((el) => el.tagName.toLowerCase()),
     ]);
 
     let label: string | null = null;
@@ -337,7 +344,7 @@ export class FormAnalyzerService {
       // エラーは無視
     }
 
-    const selector = this.generateSelector(id, name, type || 'submit');
+    const selector = this.generateButtonSelector(id, name, label, tagName);
 
     const confidence = this.calculateFieldConfidence({
       hasId: !!id,
@@ -359,7 +366,7 @@ export class FormAnalyzerService {
   }
 
   /**
-   * CSSセレクタを生成
+   * CSSセレクタを生成（入力フィールド用）
    * 優先順位: id > name > type
    */
   private generateSelector(
@@ -374,6 +381,33 @@ export class FormAnalyzerService {
       return `input[name="${name}"]`;
     }
     return `input[type="${type}"]`;
+  }
+
+  /**
+   * ボタン用のCSSセレクタを生成
+   * 優先順位: id > name > テキスト（:has-text）> タグ+type
+   */
+  private generateButtonSelector(
+    id: string | null,
+    name: string | null,
+    label: string | null,
+    tagName: string
+  ): string {
+    if (id) {
+      return `#${id}`;
+    }
+    if (name) {
+      return `${tagName}[name="${name}"]`;
+    }
+    // ラベル（テキスト）がある場合は :has-text を使用
+    if (label) {
+      return `${tagName}:has-text("${label}")`;
+    }
+    // フォールバック: タグ + type
+    if (tagName === 'button') {
+      return 'button[type="submit"]';
+    }
+    return 'input[type="submit"]';
   }
 
   /**

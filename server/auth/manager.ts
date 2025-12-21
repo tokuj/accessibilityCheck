@@ -129,8 +129,20 @@ function createBasicSession(config: AuthConfig): AuthResult {
  * フォームログインを実行してセッションを取得
  */
 async function performFormLogin(config: AuthConfig, targetUrl: string): Promise<AuthResult> {
+  console.log('[FormLogin] 開始 - config:', {
+    loginUrl: config.loginUrl,
+    usernameSelector: config.usernameSelector,
+    passwordSelector: config.passwordSelector,
+    submitSelector: config.submitSelector,
+    username: config.username ? '(設定あり)' : '(未設定)',
+    password: config.password ? '(設定あり)' : '(未設定)',
+    successUrlPattern: config.successUrlPattern,
+    targetUrl,
+  });
+
   if (!config.loginUrl || !config.usernameSelector || !config.passwordSelector ||
       !config.submitSelector || !config.username || !config.password) {
+    console.log('[FormLogin] エラー: 必須設定が不足');
     return {
       success: false,
       error: 'フォームログインに必要な設定が不足しています（loginUrl, usernameSelector, passwordSelector, submitSelector, username, password）',
@@ -140,32 +152,63 @@ async function performFormLogin(config: AuthConfig, targetUrl: string): Promise<
   let browser: Browser | null = null;
 
   try {
+    console.log('[FormLogin] ブラウザ起動中...');
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext();
     const page = await context.newPage();
 
     // ログインページに移動
+    console.log('[FormLogin] ログインページに移動:', config.loginUrl);
     await page.goto(config.loginUrl, { waitUntil: 'networkidle' });
+    console.log('[FormLogin] ページ読み込み完了, URL:', page.url());
 
     // ユーザー名を入力
+    console.log('[FormLogin] ユーザー名入力 - セレクタ:', config.usernameSelector);
     await page.fill(config.usernameSelector, config.username);
+    console.log('[FormLogin] ユーザー名入力完了');
 
     // パスワードを入力
+    console.log('[FormLogin] パスワード入力 - セレクタ:', config.passwordSelector);
     await page.fill(config.passwordSelector, config.password);
+    console.log('[FormLogin] パスワード入力完了');
 
     // 送信ボタンをクリック
+    console.log('[FormLogin] 送信ボタンクリック - セレクタ:', config.submitSelector);
+    const submitButton = page.locator(config.submitSelector);
+    const submitCount = await submitButton.count();
+    console.log('[FormLogin] 送信ボタン検出数:', submitCount);
+    if (submitCount === 0) {
+      // ページのHTMLをログに出力（デバッグ用）
+      const html = await page.content();
+      console.log('[FormLogin] 送信ボタンが見つかりません。ページHTML（最初の2000文字）:', html.substring(0, 2000));
+    }
     await page.click(config.submitSelector);
+    console.log('[FormLogin] 送信ボタンクリック完了');
 
     // ログイン成功を待つ
     if (config.successUrlPattern) {
+      console.log('[FormLogin] 成功URLパターン待機:', config.successUrlPattern);
       await page.waitForURL(new RegExp(config.successUrlPattern), { timeout: 30000 });
     } else {
-      // URLパターンが指定されていない場合はナビゲーション完了を待つ
-      await page.waitForLoadState('networkidle');
+      // ログインURLから離れるまで待つ（自動判定）
+      const loginUrl = config.loginUrl;
+      console.log('[FormLogin] ログインURLから離れるまで待機中... loginUrl:', loginUrl);
+      await page.waitForURL((url) => url.href !== loginUrl, { timeout: 30000 });
     }
+    console.log('[FormLogin] ログイン後URL:', page.url());
 
     // storageStateを保存
     const storageState = await context.storageState() as StorageState;
+
+    // デバッグ: storageStateの内容をログ出力
+    console.log('[FormLogin] storageState - cookies数:', storageState.cookies.length);
+    console.log('[FormLogin] storageState - cookies:', storageState.cookies.map(c => c.name));
+    console.log('[FormLogin] storageState - origins数:', storageState.origins?.length || 0);
+    if (storageState.origins && storageState.origins.length > 0) {
+      storageState.origins.forEach((origin) => {
+        console.log('[FormLogin] storageState - origin:', origin.origin, 'localStorage keys:', origin.localStorage?.map(item => item.name) || []);
+      });
+    }
 
     // Cookieヘッダーを構築
     const cookieHeader = storageState.cookies
@@ -179,15 +222,19 @@ async function performFormLogin(config: AuthConfig, targetUrl: string): Promise<
       },
     };
 
-    return { success: true, session, storageState };
+    console.log('[FormLogin] 成功 - セッション取得完了（ブラウザは閉じずに返す）');
+    // ブラウザを閉じずに返す（IndexedDB認証対応）
+    return { success: true, session, storageState, browser, context, page };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { success: false, error: `フォームログインに失敗しました: ${message}` };
-  } finally {
+    console.log('[FormLogin] エラー:', message);
+    // エラー時はブラウザを閉じる
     if (browser) {
       await browser.close();
     }
+    return { success: false, error: `フォームログインに失敗しました: ${message}` };
   }
+  // finallyでブラウザを閉じない - 呼び出し元で管理
 }
 
 /**

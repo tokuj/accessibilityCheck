@@ -111,7 +111,7 @@ describe('AuthSettings', () => {
       expect(screen.getByLabelText('パスワード')).toBeInTheDocument();
     });
 
-    it('フォームログインを選択するとフォーム設定フィールドが表示される', async () => {
+    it('フォームログインを選択するとフォーム解析パネルと認証情報入力が表示される', async () => {
       render(
         <AuthSettings
           open={true}
@@ -125,7 +125,10 @@ describe('AuthSettings', () => {
       await userEvent.click(select);
       await userEvent.click(screen.getByRole('option', { name: 'フォームログイン' }));
 
-      expect(screen.getByLabelText('ログインURL')).toBeInTheDocument();
+      // 自動解析モードがデフォルト: フォーム解析パネルが表示される
+      expect(screen.getByPlaceholderText('https://example.com/login')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '解析' })).toBeInTheDocument();
+      // ユーザー名・パスワード入力も表示（ただし解析完了まで無効）
       expect(screen.getByLabelText('ユーザー名')).toBeInTheDocument();
       expect(screen.getByLabelText('パスワード')).toBeInTheDocument();
     });

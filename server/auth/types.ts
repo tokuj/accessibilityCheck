@@ -88,6 +88,12 @@ export interface AuthResult {
   session?: AuthSession;
   storageState?: StorageState;
   error?: string;
+  /** フォームログイン時に使用したブラウザ（IndexedDB対応用） */
+  browser?: import('playwright').Browser;
+  /** フォームログイン時に使用したコンテキスト */
+  context?: import('playwright').BrowserContext;
+  /** フォームログイン時に使用したページ */
+  page?: import('playwright').Page;
 }
 
 // ============================================

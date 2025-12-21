@@ -223,4 +223,86 @@ export type LoginError =
 export type CaptureError =
   | { type: 'session_not_found'; message: string }
   | { type: 'capture_failed'; message: string }
-  | { type: 'save_failed'; message: string }
+  | { type: 'save_failed'; message: string };
+
+// ============================================
+// FormAnalyzer関連の型定義 (Task 1.1)
+// ============================================
+
+/**
+ * フォームフィールド候補
+ * 解析で検出された入力フィールドやボタンの情報
+ */
+export interface FormFieldCandidate {
+  /** CSSセレクタ */
+  selector: string;
+  /** ラベル要素のテキスト（存在する場合） */
+  label: string | null;
+  /** placeholder属性の値（存在する場合） */
+  placeholder: string | null;
+  /** name属性の値（存在する場合） */
+  name: string | null;
+  /** id属性の値（存在する場合） */
+  id: string | null;
+  /** type属性の値（email, password, submit等） */
+  type: string;
+  /** 検出の信頼度スコア（0.0〜1.0） */
+  confidence: number;
+}
+
+/**
+ * フォーム解析結果
+ * ログインページから検出されたフォーム要素一覧
+ */
+export interface FormAnalysisResult {
+  /** ユーザー名入力フィールドの候補 */
+  usernameFields: FormFieldCandidate[];
+  /** パスワード入力フィールドの候補 */
+  passwordFields: FormFieldCandidate[];
+  /** 送信ボタンの候補 */
+  submitButtons: FormFieldCandidate[];
+  /** 全体の信頼度 */
+  confidence: 'high' | 'medium' | 'low';
+}
+
+/**
+ * 選択されたフォームセレクタ
+ * ユーザーが確定した各要素のセレクタ
+ */
+export interface SelectedFormSelectors {
+  /** ユーザー名フィールドのセレクタ */
+  usernameSelector: string;
+  /** パスワードフィールドのセレクタ */
+  passwordSelector: string;
+  /** 送信ボタンのセレクタ */
+  submitSelector: string;
+}
+
+/**
+ * フォーム解析エラー（フロントエンド向け）
+ * UIで表示するエラーの種別とメッセージ
+ */
+export type FormAnalysisError =
+  | { type: 'invalid_url'; message: string }
+  | { type: 'network_error'; message: string }
+  | { type: 'timeout'; message: string }
+  | { type: 'no_form_found'; message: string }
+  | { type: 'analysis_failed'; message: string };
+
+/**
+ * 解析オプション
+ * フォーム解析時の設定
+ */
+export interface AnalyzeOptions {
+  /** タイムアウト（ミリ秒、デフォルト30000） */
+  timeout?: number;
+}
+
+/**
+ * 解析エラー（バックエンド向け）
+ * サービス層で発生するエラーの種別
+ */
+export type AnalyzeError =
+  | { type: 'navigation_failed'; message: string }
+  | { type: 'timeout'; message: string }
+  | { type: 'no_form_found'; message: string };

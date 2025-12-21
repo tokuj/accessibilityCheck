@@ -1,9 +1,11 @@
 /**
  * Interactive Login API
  * インタラクティブログインの開始・キャプチャ・キャンセルを行うAPIエンドポイント
+ * フォーム解析APIエンドポイント
  *
  * Task 8: Interactive Login API実装
- * Requirements: 1.1-1.4
+ * Task 2.1: フォーム解析APIエンドポイント
+ * Requirements: 1.1-1.4, 2.1, 1.3, 1.4, 2.6, 5.3, 5.4
  */
 
 import { Router, type Request, type Response } from 'express';
@@ -11,6 +13,10 @@ import {
   InteractiveLoginService,
   interactiveLoginService,
 } from '../auth/interactive-login';
+import {
+  FormAnalyzerService,
+  formAnalyzerService,
+} from '../auth/form-analyzer';
 import type { LoginOptions } from '../auth/types';
 
 /**
@@ -30,12 +36,21 @@ interface CaptureSessionRequest {
 }
 
 /**
+ * フォーム解析リクエストボディ
+ */
+interface AnalyzeFormRequest {
+  url: string;
+}
+
+/**
  * Interactive Login Routerを作成
- * @param service InteractiveLoginServiceインスタンス（DIでテスト容易性を確保）
+ * @param loginService InteractiveLoginServiceインスタンス（DIでテスト容易性を確保）
+ * @param analyzerService FormAnalyzerServiceインスタンス（DIでテスト容易性を確保）
  * @returns Express Router
  */
 export function createAuthRouter(
-  service: InteractiveLoginService = interactiveLoginService
+  loginService: InteractiveLoginService = interactiveLoginService,
+  analyzerService: FormAnalyzerService = formAnalyzerService
 ): Router {
   const router = Router();
 
@@ -55,7 +70,7 @@ export function createAuthRouter(
     }
 
     try {
-      const result = await service.startLogin(body.loginUrl, body.options);
+      const result = await loginService.startLogin(body.loginUrl, body.options);
 
       if (!result.success) {
         // エラータイプに応じたHTTPステータスコードを返す
@@ -108,7 +123,7 @@ export function createAuthRouter(
     }
 
     // アクティブなセッションがあるか確認
-    const activeSession = service.getActiveSession();
+    const activeSession = loginService.getActiveSession();
     if (!activeSession) {
       res.status(404).json({
         error: 'アクティブなログインセッションがありません',
@@ -117,7 +132,7 @@ export function createAuthRouter(
     }
 
     try {
-      const result = await service.captureSession(
+      const result = await loginService.captureSession(
         activeSession.id,
         body.sessionName,
         body.passphrase
@@ -152,7 +167,7 @@ export function createAuthRouter(
    * ログインセッションをキャンセル
    */
   router.delete('/interactive-login', async (req: Request, res: Response) => {
-    const activeSession = service.getActiveSession();
+    const activeSession = loginService.getActiveSession();
 
     if (!activeSession) {
       res.status(404).json({
@@ -162,7 +177,7 @@ export function createAuthRouter(
     }
 
     try {
-      await service.cancelLogin(activeSession.id);
+      await loginService.cancelLogin(activeSession.id);
       res.status(204).send();
     } catch (error) {
       console.error('ログインセッションキャンセルエラー:', error);
@@ -177,8 +192,100 @@ export function createAuthRouter(
    * アクティブなログインセッションを取得
    */
   router.get('/interactive-login', (_req: Request, res: Response) => {
-    const activeSession = service.getActiveSession();
+    const activeSession = loginService.getActiveSession();
     res.status(200).json({ session: activeSession });
+  });
+
+  /**
+   * POST /api/auth/analyze-form
+   * フォーム要素を解析
+   *
+   * Requirements: 2.1, 1.3, 1.4, 2.6, 5.3, 5.4
+   */
+  router.post('/analyze-form', async (req: Request, res: Response) => {
+    const body = req.body as AnalyzeFormRequest;
+
+    // URLのバリデーション
+    if (!body.url || body.url.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: {
+          type: 'invalid_url',
+          message: 'URLを指定してください',
+        },
+      });
+      return;
+    }
+
+    // URL形式のバリデーション
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(body.url);
+    } catch {
+      res.status(400).json({
+        success: false,
+        error: {
+          type: 'invalid_url',
+          message: '無効なURL形式です',
+        },
+      });
+      return;
+    }
+
+    // HTTP/HTTPSプロトコルのみ許可
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      res.status(400).json({
+        success: false,
+        error: {
+          type: 'invalid_url',
+          message: 'HTTPまたはHTTPSプロトコルのURLを指定してください',
+        },
+      });
+      return;
+    }
+
+    try {
+      const result = await analyzerService.analyzeLoginForm(body.url);
+
+      if (!result.success) {
+        // エラータイプに応じたHTTPステータスコードを返す
+        switch (result.error.type) {
+          case 'timeout':
+            res.status(408).json({
+              success: false,
+              error: result.error,
+            });
+            return;
+          case 'no_form_found':
+            res.status(404).json({
+              success: false,
+              error: result.error,
+            });
+            return;
+          case 'navigation_failed':
+          default:
+            res.status(500).json({
+              success: false,
+              error: result.error,
+            });
+            return;
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        result: result.value,
+      });
+    } catch (error) {
+      console.error('フォーム解析エラー:', error);
+      res.status(500).json({
+        success: false,
+        error: {
+          type: 'analysis_failed',
+          message: 'フォームの解析に失敗しました',
+        },
+      });
+    }
   });
 
   return router;

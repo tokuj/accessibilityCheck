@@ -7,10 +7,14 @@ set -e  # エラー時に即終了
 
 # 設定
 PROJECT_ID="itgproto"
+PROJECT_NUMBER="783872951114"
 REGION="asia-northeast1"
 SERVICE_NAME="a11y-check-api"
 IMAGE_NAME="a11y-check-api"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy"
+
+# URL形式を統一（新しい形式: PROJECT_NUMBER.REGION.run.app）
+SERVICE_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
 
 # VPCインフラストラクチャ設定
 VPC_NAME="a11y-vpc"
@@ -141,8 +145,7 @@ echo "=========================================="
 echo "Deployment completed!"
 echo "=========================================="
 echo ""
-echo "サービスURL:"
-SERVICE_URL=$(gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format='value(status.url)')
+echo "サービスURL（この URL を使用してください）:"
 echo "  ${SERVICE_URL}"
 echo ""
 echo "固定IPアドレス（外向き通信用）:"

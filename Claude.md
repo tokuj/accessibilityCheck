@@ -91,6 +91,28 @@ npx playwright show-report
 3. テストコードは必ずレビューを受ける
 4. コミット前にテストを実行
 
+## Cloud Run URL形式（重要）
+
+**必ず決定論的URL（Deterministic URL）を使用すること。**
+
+Cloud Runは2つのURL形式を自動生成するが、**決定論的URLのみを使用する**：
+
+| URL形式 | 例 | 使用可否 |
+|---------|-----|----------|
+| 決定論的（Deterministic） | `SERVICE-PROJECT_NUMBER.REGION.run.app` | **使用する** |
+| 非決定論的（Non-deterministic） | `SERVICE-RANDOMHASH-REGION.a.run.app` | **使用禁止** |
+
+### 本プロジェクトのURL
+
+- フロントエンド: `https://a11y-check-frontend-783872951114.asia-northeast1.run.app`
+- バックエンド: `https://a11y-check-api-783872951114.asia-northeast1.run.app`
+
+### 理由
+
+- 決定論的URLはデプロイ前に予測可能
+- `gcloud run services describe`の出力は非決定論的URLを返すため、**絶対に使用しない**
+- デプロイスクリプト（`scripts/deploy.sh`, `scripts/deploy-frontend.sh`）は決定論的URLを表示するように設定済み
+
 
 # AI-DLC and Spec-Driven Development
 

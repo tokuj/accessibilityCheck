@@ -24,7 +24,7 @@ function App() {
   const [totalSteps, setTotalSteps] = useState(4);
   const [stepName, setStepName] = useState('');
 
-  const handleAnalyze = useCallback((url: string, auth?: AuthConfig) => {
+  const handleAnalyze = useCallback((url: string, auth?: AuthConfig, sessionId?: string, passphrase?: string) => {
     setLoading(true);
     setError(null);
     setReport(null);
@@ -34,7 +34,7 @@ function App() {
     setStepName('');
 
     analyzeUrlWithSSE(
-      { url, auth },
+      { url, auth, sessionId, passphrase },
       {
         onLog: (log) => {
           setLogs((prev) => {
@@ -113,7 +113,12 @@ function App() {
             URLを入力するだけで、WCAG準拠状況を瞬時に分析します
           </Typography>
 
-          <UrlInput onAnalyze={handleAnalyze} disabled={loading} />
+          <UrlInput
+              onAnalyze={handleAnalyze}
+              disabled={loading}
+              showSessionManager={true}
+              isDevelopment={import.meta.env.DEV}
+            />
 
           {error && (
             <Alert severity="error" sx={{ mt: 3, maxWidth: 600 }}>
@@ -173,6 +178,8 @@ function App() {
               disabled={loading}
               initialValue={currentUrl}
               compact
+              showSessionManager={true}
+              isDevelopment={import.meta.env.DEV}
             />
           </Box>
         </Box>

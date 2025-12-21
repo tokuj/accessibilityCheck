@@ -98,6 +98,8 @@ export interface AuthConfig {
 export interface AnalyzeRequest {
   url: string;
   auth?: AuthConfig;
+  sessionId?: string;
+  passphrase?: string;
 }
 
 export interface AnalyzeResponse {
@@ -160,9 +162,18 @@ export interface ErrorEvent {
 }
 
 /**
+ * SSEセッション期限切れイベント
+ * 401/403エラー検出時に送信
+ */
+export interface SessionExpiredEvent {
+  type: 'session_expired';
+  message: string;
+}
+
+/**
  * 全SSEイベントのユニオン型
  */
-export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent;
+export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent;
 
 /**
  * ログエントリ（UI表示用）
@@ -181,4 +192,60 @@ export interface AnalysisProgressState {
   status: 'idle' | 'analyzing' | 'completed' | 'error';
   currentStep: number;
   totalSteps: number;
+}
+
+// ============================================
+// セッション管理関連の型定義（Task 4）
+// ============================================
+
+/**
+ * セッションメタデータ（バックエンドと同期）
+ */
+export interface SessionMetadata {
+  /** セッションID（UUID） */
+  id: string;
+  /** セッション名 */
+  name: string;
+  /** 対象ドメイン */
+  domain: string;
+  /** 作成日時（ISO 8601） */
+  createdAt: string;
+  /** 更新日時（ISO 8601） */
+  updatedAt: string;
+  /** 有効期限（ISO 8601、オプション） */
+  expiresAt?: string;
+  /** スキーマバージョン */
+  schemaVersion: number;
+  /** 認証タイプ */
+  authType: AuthType;
+  /** 自動削除フラグ */
+  autoDestroy: boolean;
+}
+
+/**
+ * セッション一覧表示用アイテム
+ */
+export interface SessionListItem {
+  id: string;
+  name: string;
+  domain: string;
+  authType: AuthType;
+  expiresAt?: string;
+  isExpired: boolean;
+}
+
+/**
+ * 認証状態
+ */
+export type AuthStatus = 'unauthenticated' | 'authenticated' | 'expired';
+
+/**
+ * SessionManagerUIの状態
+ */
+export interface SessionManagerState {
+  sessions: SessionListItem[];
+  selectedSessionId: string | null;
+  authStatus: AuthStatus;
+  isLoading: boolean;
+  error: string | null;
 }

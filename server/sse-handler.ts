@@ -1,7 +1,8 @@
 import type { Request, Response, RequestHandler } from 'express';
 import type { SSEEvent, ProgressCallback } from './analyzers/sse-types';
-import type { AuthConfig } from './auth/types';
+import type { AuthConfig, StorageState } from './auth/types';
 import type { AccessibilityReport } from './analyzers/types';
+import { storageStateManager } from './auth/storage-state-manager';
 
 /**
  * SSEイベントをdata形式にフォーマットする
@@ -72,13 +73,37 @@ export function parseAuthFromQuery(query: Request['query']): AuthConfig | undefi
 }
 
 /**
+ * セッション認証情報の型定義
+ */
+export interface SessionAuthInfo {
+  sessionId: string;
+  passphrase?: string;
+}
+
+/**
+ * クエリパラメータからセッション認証情報を取得する
+ */
+export function parseSessionFromQuery(query: Request['query']): SessionAuthInfo | undefined {
+  const sessionId = query.sessionId as string | undefined;
+  if (!sessionId) {
+    return undefined;
+  }
+
+  return {
+    sessionId,
+    passphrase: query.passphrase as string | undefined,
+  };
+}
+
+/**
  * 分析関数の型定義
  */
 export type AnalyzeFunction = (
   url: string,
   auth: AuthConfig | undefined,
   onProgress: ProgressCallback,
-  res: Response
+  res: Response,
+  storageState?: StorageState
 ) => Promise<AccessibilityReport>;
 
 /**
@@ -101,7 +126,9 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
       return;
     }
 
-    // 認証設定を取得
+    // セッション認証情報を取得
+    const sessionInfo = parseSessionFromQuery(req.query);
+    // 手動認証設定を取得
     const auth = parseAuthFromQuery(req.query);
 
     // SSEヘッダーを設定
@@ -112,10 +139,58 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
       sendSSEEvent(res, event);
     };
 
+    // セッションからstorageStateを復号化
+    let storageState: StorageState | undefined;
+    if (sessionInfo) {
+      console.log(`[SSE] セッションベース認証: sessionId=${sessionInfo.sessionId}`);
+
+      if (!sessionInfo.passphrase) {
+        // パスフレーズが空の場合はエラー
+        sendSSEEvent(res, {
+          type: 'error',
+          message: 'セッションのパスフレーズが指定されていません',
+          code: 'MISSING_PASSPHRASE',
+        });
+        res.end();
+        return;
+      }
+
+      const loadResult = await storageStateManager.load(sessionInfo.sessionId, sessionInfo.passphrase);
+      if (!loadResult.success) {
+        // 復号化失敗
+        if (loadResult.error.type === 'decryption_failed') {
+          sendSSEEvent(res, {
+            type: 'error',
+            message: 'パスフレーズが正しくありません',
+            code: 'INVALID_PASSPHRASE',
+          });
+        } else if (loadResult.error.type === 'not_found') {
+          sendSSEEvent(res, {
+            type: 'error',
+            message: 'セッションが見つかりません',
+            code: 'SESSION_NOT_FOUND',
+          });
+        } else {
+          sendSSEEvent(res, {
+            type: 'error',
+            message: loadResult.error.message,
+            code: 'SESSION_LOAD_ERROR',
+          });
+        }
+        res.end();
+        return;
+      }
+
+      storageState = loadResult.value;
+      console.log(`[SSE] セッション復号化成功: sessionId=${sessionInfo.sessionId}`);
+    }
+
     try {
       // 分析開始ログ
-      const authType = auth?.type || 'none';
-      console.log(`[SSE] 分析開始: ${url} (認証: ${authType})`);
+      const authInfo = sessionInfo
+        ? `session:${sessionInfo.sessionId}`
+        : auth?.type || 'none';
+      console.log(`[SSE] 分析開始: ${url} (認証: ${authInfo})`);
 
       sendSSEEvent(res, {
         type: 'log',
@@ -123,8 +198,8 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
         timestamp: new Date().toISOString(),
       });
 
-      // 分析実行
-      const report = await analyzeFn(url, auth, onProgress, res);
+      // 分析実行（storageStateがある場合はそれを使用）
+      const report = await analyzeFn(url, auth, onProgress, res, storageState);
 
       // 完了イベントを送信
       sendSSEEvent(res, {
@@ -136,12 +211,21 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
     } catch (error) {
       console.error('[SSE] 分析エラー:', error);
 
-      // エラーイベントを送信
-      sendSSEEvent(res, {
-        type: 'error',
-        message: error instanceof Error ? error.message : '分析中にエラーが発生しました',
-        code: 'ANALYSIS_ERROR',
-      });
+      // 401/403エラーの検出（セッション期限切れ）
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (sessionInfo && (errorMessage.includes('401') || errorMessage.includes('403') || errorMessage.includes('Unauthorized') || errorMessage.includes('Forbidden'))) {
+        sendSSEEvent(res, {
+          type: 'session_expired',
+          message: 'セッションが期限切れの可能性があります。再ログインしてください。',
+        });
+      } else {
+        // 通常のエラーイベントを送信
+        sendSSEEvent(res, {
+          type: 'error',
+          message: error instanceof Error ? error.message : '分析中にエラーが発生しました',
+          code: 'ANALYSIS_ERROR',
+        });
+      }
     } finally {
       res.end();
     }

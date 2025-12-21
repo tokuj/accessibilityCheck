@@ -3,8 +3,8 @@ import type {
   AnalyzeResponse,
   SSEEvent,
   AccessibilityReport,
-  AuthConfig,
   LogEntry,
+  SessionMetadata,
 } from '../types/accessibility';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '';
@@ -93,6 +93,17 @@ export interface SSECallbacks {
   onProgress?: (step: number, total: number, stepName: string) => void;
   onComplete?: (report: AccessibilityReport) => void;
   onError?: (message: string) => void;
+  onSessionExpired?: () => void;
+}
+
+/**
+ * SSEストリーミング分析のオプション
+ */
+export interface SSEAnalyzeOptions {
+  /** セッションID（セッションベース認証用） */
+  sessionId?: string;
+  /** セッションのパスフレーズ（セッションベース認証用） */
+  passphrase?: string;
 }
 
 /**
@@ -100,12 +111,21 @@ export interface SSECallbacks {
  */
 export function analyzeUrlWithSSE(
   request: AnalyzeRequest,
-  callbacks: SSECallbacks
+  callbacks: SSECallbacks,
+  options?: SSEAnalyzeOptions
 ): { cancel: () => void } {
   const url = new URL(`${API_BASE_URL}/api/analyze-stream`);
   url.searchParams.set('url', request.url);
 
-  // 認証パラメータを追加
+  // セッションベース認証パラメータを追加
+  if (options?.sessionId) {
+    url.searchParams.set('sessionId', options.sessionId);
+    if (options.passphrase) {
+      url.searchParams.set('passphrase', options.passphrase);
+    }
+  }
+
+  // 認証パラメータを追加（手動認証）
   if (request.auth) {
     url.searchParams.set('authType', request.auth.type);
     if (request.auth.username) url.searchParams.set('authUsername', request.auth.username);
@@ -165,6 +185,16 @@ export function analyzeUrlWithSSE(
           });
           eventSource.close();
           break;
+
+        case 'session_expired':
+          callbacks.onSessionExpired?.();
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'error',
+            message: data.message,
+          });
+          eventSource.close();
+          break;
       }
     } catch {
       // JSONパースエラーは無視
@@ -181,4 +211,287 @@ export function analyzeUrlWithSSE(
       eventSource.close();
     },
   };
+}
+
+// ============================================
+// セッション管理API（Task 4）
+// ============================================
+
+/**
+ * セッション一覧を取得
+ */
+export async function getSessions(): Promise<SessionMetadata[]> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sessions`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+/**
+ * セッションを削除
+ */
+export async function deleteSession(sessionId: string): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode === 404) {
+        throw new ApiError('client', 'セッションが見つかりません', statusCode);
+      }
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+/**
+ * セッションを復号化して読み込み
+ */
+export async function loadSession(
+  sessionId: string,
+  passphrase: string
+): Promise<{ storageState: unknown }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}/load`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ passphrase }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode === 401) {
+        throw new ApiError('client', 'パスフレーズが正しくありません', statusCode);
+      }
+      if (statusCode === 404) {
+        throw new ApiError('client', 'セッションが見つかりません', statusCode);
+      }
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+// ============================================
+// インタラクティブログインAPI（Task 9）
+// ============================================
+
+/**
+ * ログインセッション
+ */
+export interface LoginSession {
+  id: string;
+  loginUrl: string;
+  startedAt: string;
+  status: 'waiting_for_login' | 'ready_to_capture' | 'captured' | 'cancelled';
+}
+
+/**
+ * インタラクティブログインを開始
+ */
+export async function startInteractiveLogin(loginUrl: string): Promise<LoginSession> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/interactive-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ loginUrl }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode === 400) {
+        const body = await response.json();
+        throw new ApiError('client', body.error || '無効なリクエストです', statusCode);
+      }
+      if (statusCode === 503) {
+        const body = await response.json();
+        throw new ApiError('server', body.error || 'headedブラウザはこの環境で利用できません', statusCode);
+      }
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+/**
+ * セッションをキャプチャして保存
+ */
+export async function captureSession(
+  sessionName: string,
+  passphrase: string
+): Promise<SessionMetadata> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/capture-session`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sessionName, passphrase }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode === 400) {
+        const body = await response.json();
+        throw new ApiError('client', body.error || '無効なリクエストです', statusCode);
+      }
+      if (statusCode === 404) {
+        throw new ApiError('client', 'アクティブなログインセッションがありません', statusCode);
+      }
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+/**
+ * インタラクティブログインをキャンセル
+ */
+export async function cancelInteractiveLogin(): Promise<void> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/interactive-login`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode === 404) {
+        // セッションがない場合は無視（既にキャンセル済み）
+        return;
+      }
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
+}
+
+/**
+ * アクティブなログインセッションを取得
+ */
+export async function getActiveLoginSession(): Promise<LoginSession | null> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/interactive-login`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      const statusCode = response.status;
+      if (statusCode >= 500) {
+        throw new ApiError('server', getErrorMessage('server', statusCode), statusCode);
+      }
+      throw new ApiError('client', getErrorMessage('client', statusCode), statusCode);
+    }
+
+    const data = await response.json();
+    return data.session;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError('timeout', getErrorMessage('timeout'));
+    }
+    throw new ApiError('network', getErrorMessage('network'));
+  }
 }

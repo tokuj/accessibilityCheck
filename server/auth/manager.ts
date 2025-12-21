@@ -235,6 +235,24 @@ export class AuthManager {
   }
 
   /**
+   * 外部から取得したstorageStateを設定する
+   * セッションベース認証で使用
+   */
+  setStorageState(storageState: StorageState): void {
+    this.storageState = storageState;
+
+    // CookieヘッダーをセッションとしてもStorageStateから生成
+    const cookieHeader = storageState.cookies
+      .map((c) => `${c.name}=${c.value}`)
+      .join('; ');
+
+    this.session = {
+      cookies: storageState.cookies,
+      headers: cookieHeader ? { Cookie: cookieHeader } : {},
+    };
+  }
+
+  /**
    * 認証を実行してセッションを取得
    */
   async authenticate(): Promise<AuthResult> {

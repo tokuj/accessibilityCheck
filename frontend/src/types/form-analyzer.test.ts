@@ -115,13 +115,15 @@ describe('フォーム解析型定義', () => {
   });
 
   describe('SelectedFormSelectors', () => {
-    it('3つのセレクタを持つ', () => {
+    it('4つのセレクタを持つ', () => {
       const selectors: SelectedFormSelectors = {
+        loginUrl: 'https://example.com/login',
         usernameSelector: '#email',
         passwordSelector: '#password',
         submitSelector: 'button[type="submit"]',
       };
 
+      expect(selectors.loginUrl).toBe('https://example.com/login');
       expect(selectors.usernameSelector).toBe('#email');
       expect(selectors.passwordSelector).toBe('#password');
       expect(selectors.submitSelector).toBe('button[type="submit"]');
@@ -292,6 +294,7 @@ describe('フォーム解析型定義', () => {
         },
         error: null,
         selectedSelectors: {
+          loginUrl: 'https://example.com/login',
           usernameSelector: '#email',
           passwordSelector: '#password',
           submitSelector: 'button[type="submit"]',

@@ -60,5 +60,32 @@ npm run report:a11y
 - **認証の抽象化**: AuthManagerで認証方式を統一的に扱う
 - **スクリーンショット取得**: 分析結果と視覚的コンテキストを併せて提供
 
+## Cloud Run デプロイ
+
+### URL形式（重要）
+
+**決定論的URL（Deterministic URL）のみを使用すること。**
+
+```
+# 決定論的URL形式（使用する）
+https://SERVICE-PROJECT_NUMBER.REGION.run.app
+
+# 非決定論的URL形式（使用禁止）
+https://SERVICE-RANDOMHASH-REGION.a.run.app
+```
+
+### 本プロジェクトのURL
+
+| サービス | URL |
+|----------|-----|
+| フロントエンド | `https://a11y-check-frontend-783872951114.asia-northeast1.run.app` |
+| バックエンド | `https://a11y-check-api-783872951114.asia-northeast1.run.app` |
+
+### 注意事項
+
+- `gcloud run services describe --format='value(status.url)'` は非決定論的URLを返すため使用禁止
+- デプロイ時のURL表示は `scripts/deploy.sh` および `scripts/deploy-frontend.sh` で管理
+- プロジェクト番号 `783872951114` はスクリプト内で `PROJECT_NUMBER` 変数として定義済み
+
 ---
 _created_at: 2025-12-17_

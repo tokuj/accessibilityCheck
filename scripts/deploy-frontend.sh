@@ -6,10 +6,15 @@ set -e  # エラー時に即終了
 
 # 設定
 PROJECT_ID="itgproto"
+PROJECT_NUMBER="783872951114"
 REGION="asia-northeast1"
 SERVICE_NAME="a11y-check-frontend"
 IMAGE_NAME="a11y-check-frontend"
 REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy"
+
+# URL形式を統一（新しい形式: PROJECT_NUMBER.REGION.run.app）
+FRONTEND_URL="https://${SERVICE_NAME}-${PROJECT_NUMBER}.${REGION}.run.app"
+BACKEND_URL="https://a11y-check-api-${PROJECT_NUMBER}.${REGION}.run.app"
 
 echo "=========================================="
 echo "Frontend Cloud Run デプロイ開始"
@@ -53,12 +58,11 @@ echo "=========================================="
 echo "Deployment completed!"
 echo "=========================================="
 echo ""
-echo "フロントエンドURL:"
-FRONTEND_URL=$(gcloud run services describe ${SERVICE_NAME} --region ${REGION} --format='value(status.url)')
+echo "フロントエンドURL（この URL を使用してください）:"
 echo "  ${FRONTEND_URL}"
 echo ""
 echo "バックエンドAPI URL:"
-echo "  https://a11y-check-api-783872951114.asia-northeast1.run.app"
+echo "  ${BACKEND_URL}"
 echo ""
 echo "=========================================="
 echo "NOTE: バックエンドのCORS設定を更新する場合:"

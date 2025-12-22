@@ -7,6 +7,7 @@ import type {
   CompleteEvent,
   ErrorEvent,
   ProgressCallback,
+  PageProgressEvent,
 } from './sse-types';
 
 describe('SSEイベント型定義', () => {
@@ -91,17 +92,62 @@ describe('SSEイベント型定義', () => {
     });
   });
 
+  describe('PageProgressEvent', () => {
+    it('ページ進捗イベントの構造が正しい', () => {
+      const event: PageProgressEvent = {
+        type: 'page_progress',
+        pageIndex: 1,
+        totalPages: 4,
+        pageUrl: 'https://example.com/page2',
+        pageTitle: 'Page 2 Title',
+        status: 'started',
+      };
+
+      expect(event.type).toBe('page_progress');
+      expect(event.pageIndex).toBe(1);
+      expect(event.totalPages).toBe(4);
+      expect(event.pageUrl).toBe('https://example.com/page2');
+      expect(event.pageTitle).toBe('Page 2 Title');
+      expect(event.status).toBe('started');
+    });
+
+    it('全てのステータスを受け入れる', () => {
+      const statuses: PageProgressEvent['status'][] = ['started', 'analyzing', 'completed', 'failed'];
+
+      statuses.forEach((status) => {
+        const event: PageProgressEvent = {
+          type: 'page_progress',
+          pageIndex: 0,
+          totalPages: 1,
+          pageUrl: 'https://example.com',
+          pageTitle: 'Test',
+          status,
+        };
+        expect(event.status).toBe(status);
+      });
+    });
+  });
+
   describe('SSEEvent union type', () => {
     it('SSEEventは全イベント型のユニオンである', () => {
       const logEvent: SSEEvent = { type: 'log', message: 'test', timestamp: '' };
       const progressEvent: SSEEvent = { type: 'progress', step: 1, total: 3, stepName: 'test' };
       const violationEvent: SSEEvent = { type: 'violation', rule: 'test', impact: 'minor', count: 1 };
       const errorEvent: SSEEvent = { type: 'error', message: 'error', code: 'ERROR' };
+      const pageProgressEvent: SSEEvent = {
+        type: 'page_progress',
+        pageIndex: 0,
+        totalPages: 2,
+        pageUrl: 'https://example.com',
+        pageTitle: 'Test Page',
+        status: 'started',
+      };
 
       expect(logEvent.type).toBe('log');
       expect(progressEvent.type).toBe('progress');
       expect(violationEvent.type).toBe('violation');
       expect(errorEvent.type).toBe('error');
+      expect(pageProgressEvent.type).toBe('page_progress');
     });
   });
 

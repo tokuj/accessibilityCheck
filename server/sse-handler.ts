@@ -3,6 +3,7 @@ import type { SSEEvent, ProgressCallback } from './analyzers/sse-types';
 import type { AuthConfig, StorageState } from './auth/types';
 import type { AccessibilityReport } from './analyzers/types';
 import { storageStateManager } from './auth/storage-state-manager';
+import { analyzeMultipleUrls } from './multi-url-analyzer';
 
 /**
  * SSEイベントをdata形式にフォーマットする
@@ -96,6 +97,56 @@ export function parseSessionFromQuery(query: Request['query']): SessionAuthInfo 
 }
 
 /**
+ * URLパース結果の型定義
+ */
+export interface ParseUrlsResult {
+  urls: string[];
+  error: string | null;
+}
+
+/**
+ * クエリパラメータからURLリストを取得する
+ * 単一URL（url=...）または複数URL（urls[]=...&urls[]=...）をサポート
+ * @requirement 5.1 - 配列形式で複数URLを受け付ける
+ */
+export function parseUrlsFromQuery(query: Request['query']): ParseUrlsResult {
+  let urls: string[] = [];
+
+  // 複数URL形式をチェック
+  const urlsParam = query['urls[]'];
+  if (urlsParam) {
+    if (Array.isArray(urlsParam)) {
+      urls = urlsParam as string[];
+    } else {
+      urls = [urlsParam as string];
+    }
+  } else if (query.url) {
+    // 後方互換: 単一URL形式
+    urls = [query.url as string];
+  }
+
+  // URL数のバリデーション
+  if (urls.length === 0) {
+    return { urls: [], error: 'URLが指定されていません' };
+  }
+
+  if (urls.length > 4) {
+    return { urls: [], error: 'URLは1件以上4件以下で指定してください' };
+  }
+
+  // 各URLの形式バリデーション
+  for (const url of urls) {
+    try {
+      new URL(url);
+    } catch {
+      return { urls: [], error: `無効なURL形式です: ${url}` };
+    }
+  }
+
+  return { urls, error: null };
+}
+
+/**
  * 分析関数の型定義
  */
 export type AnalyzeFunction = (
@@ -108,23 +159,21 @@ export type AnalyzeFunction = (
 
 /**
  * SSEストリーミングエンドポイントのハンドラーを作成する
+ * 複数URL対応: urls[]パラメータまたは単一urlパラメータを受け付ける
  */
 export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
   return async (req: Request, res: Response) => {
-    const url = req.query.url as string;
+    // 複数URL対応: parseUrlsFromQueryを使用
+    const urlsResult = parseUrlsFromQuery(req.query);
 
     // URLバリデーション
-    if (!url) {
-      res.status(400).json({ status: 'error', error: 'URLが指定されていません' });
+    if (urlsResult.error) {
+      res.status(400).json({ status: 'error', error: urlsResult.error });
       return;
     }
 
-    try {
-      new URL(url);
-    } catch {
-      res.status(400).json({ status: 'error', error: '無効なURL形式です' });
-      return;
-    }
+    const urls = urlsResult.urls;
+    const isMultiUrl = urls.length > 1;
 
     // セッション認証情報を取得
     const sessionInfo = parseSessionFromQuery(req.query);
@@ -190,24 +239,53 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
       const authInfo = sessionInfo
         ? `session:${sessionInfo.sessionId}`
         : auth?.type || 'none';
-      console.log(`[SSE] 分析開始: ${url} (認証: ${authInfo})`);
 
-      sendSSEEvent(res, {
-        type: 'log',
-        message: `分析開始: ${url}`,
-        timestamp: new Date().toISOString(),
-      });
+      if (isMultiUrl) {
+        // 複数URL分析
+        console.log(`[SSE] 複数URL分析開始: ${urls.length}件 (認証: ${authInfo})`);
 
-      // 分析実行（storageStateがある場合はそれを使用）
-      const report = await analyzeFn(url, auth, onProgress, res, storageState);
+        sendSSEEvent(res, {
+          type: 'log',
+          message: `複数URL分析開始: ${urls.length}件`,
+          timestamp: new Date().toISOString(),
+        });
 
-      // 完了イベントを送信
-      sendSSEEvent(res, {
-        type: 'complete',
-        report,
-      });
+        // 複数URL分析実行
+        const report = await analyzeMultipleUrls(urls, {
+          authConfig: auth,
+          onProgress,
+          storageState,
+        });
 
-      console.log(`[SSE] 分析完了: 違反${report.summary.totalViolations}件`);
+        // 完了イベントを送信
+        sendSSEEvent(res, {
+          type: 'complete',
+          report,
+        });
+
+        console.log(`[SSE] 複数URL分析完了: 総違反${report.summary.totalViolations}件, ページ${report.pages.length}件`);
+      } else {
+        // 単一URL分析（後方互換）
+        const url = urls[0];
+        console.log(`[SSE] 分析開始: ${url} (認証: ${authInfo})`);
+
+        sendSSEEvent(res, {
+          type: 'log',
+          message: `分析開始: ${url}`,
+          timestamp: new Date().toISOString(),
+        });
+
+        // 分析実行（storageStateがある場合はそれを使用）
+        const report = await analyzeFn(url, auth, onProgress, res, storageState);
+
+        // 完了イベントを送信
+        sendSSEEvent(res, {
+          type: 'complete',
+          report,
+        });
+
+        console.log(`[SSE] 分析完了: 違反${report.summary.totalViolations}件`);
+      }
     } catch (error) {
       console.error('[SSE] 分析エラー:', error);
 

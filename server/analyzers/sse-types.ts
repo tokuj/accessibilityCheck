@@ -61,9 +61,28 @@ export interface SessionExpiredEvent {
 }
 
 /**
+ * ページ分析進捗イベント（複数URL分析用）
+ * 各ページの分析開始/進捗/完了を通知
+ * @requirement 5.2 - 各URLを順番に分析し、進捗をSSEで通知する
+ */
+export interface PageProgressEvent {
+  type: 'page_progress';
+  /** 現在のページインデックス（0始まり） */
+  pageIndex: number;
+  /** 総ページ数 */
+  totalPages: number;
+  /** 現在のページURL */
+  pageUrl: string;
+  /** 現在のページタイトル */
+  pageTitle: string;
+  /** ページの分析ステータス */
+  status: 'started' | 'analyzing' | 'completed' | 'failed';
+}
+
+/**
  * 全SSEイベントのユニオン型
  */
-export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent;
+export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent | PageProgressEvent;
 
 /**
  * 進捗コールバック関数の型

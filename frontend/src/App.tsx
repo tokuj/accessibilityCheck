@@ -6,8 +6,8 @@ import { GridBackground } from './components/GridBackground';
 import { UrlInput } from './components/UrlInput';
 import { ReportSummary } from './components/ReportSummary';
 import { AnalysisProgress } from './components/AnalysisProgress';
-import { analyzeUrlWithSSE } from './services/api';
-import type { AccessibilityReport, AuthConfig, LogEntry } from './types/accessibility';
+import { analyzeMultipleUrlsWithSSE } from './services/api';
+import type { AccessibilityReport, AuthConfig, LogEntry, AnalysisState } from './types/accessibility';
 
 // 最大ログ行数（メモリ管理のため）
 const MAX_LOG_ENTRIES = 1000;
@@ -24,17 +24,40 @@ function App() {
   const [totalSteps, setTotalSteps] = useState(4);
   const [stepName, setStepName] = useState('');
 
-  const handleAnalyze = useCallback((url: string, auth?: AuthConfig, sessionId?: string, passphrase?: string) => {
+  // 複数URL分析用の状態（Task 6.1）
+  const [analysisState, setAnalysisState] = useState<AnalysisState | null>(null);
+  // アクティブなレポートタブのインデックス（Task 6.2）
+  // 注: setActiveReportTabは初期化時に0にリセットするために使用
+  const [, setActiveReportTab] = useState(0);
+
+  /**
+   * 分析ハンドラー（複数URL対応）
+   * @param urls 分析対象URL配列
+   * @param auth 認証設定
+   * @param sessionId セッションID
+   * @param passphrase パスフレーズ
+   * @requirement 6.1 - 入力されたURLリストを保存し、分析状態を初期化する
+   */
+  const handleAnalyze = useCallback((urls: string[], auth?: AuthConfig, sessionId?: string, passphrase?: string) => {
     setLoading(true);
     setError(null);
     setReport(null);
-    setCurrentUrl(url);
+    setCurrentUrl(urls[0] || '');
     setLogs([]);
     setCurrentStep(0);
     setStepName('');
+    setActiveReportTab(0);
 
-    analyzeUrlWithSSE(
-      { url, auth, sessionId, passphrase },
+    // 分析状態を初期化（Task 6.1）
+    setAnalysisState({
+      targetUrls: urls,
+      currentPageIndex: 0,
+      completedPageIndexes: [],
+      currentPageTitle: '',
+    });
+
+    analyzeMultipleUrlsWithSSE(
+      { urls, auth },
       {
         onLog: (log) => {
           setLogs((prev) => {
@@ -51,9 +74,23 @@ function App() {
           setTotalSteps(total);
           setStepName(name);
         },
+        onPageProgress: (pageData) => {
+          // ページ進捗状態を更新（Task 6.1）
+          setAnalysisState((prev) => {
+            if (!prev) return prev;
+            const newState = { ...prev };
+            newState.currentPageIndex = pageData.pageIndex;
+            newState.currentPageTitle = pageData.pageTitle;
+            if (pageData.status === 'completed' && !newState.completedPageIndexes.includes(pageData.pageIndex)) {
+              newState.completedPageIndexes = [...newState.completedPageIndexes, pageData.pageIndex];
+            }
+            return newState;
+          });
+        },
         onComplete: (report) => {
           setReport(report);
           setLoading(false);
+          setAnalysisState(null);
           setLogs((prev) => [
             ...prev,
             {
@@ -66,8 +103,10 @@ function App() {
         onError: (message) => {
           setError(message);
           setLoading(false);
+          setAnalysisState(null);
         },
-      }
+      },
+      { sessionId, passphrase }
     );
   }, []);
 
@@ -78,6 +117,8 @@ function App() {
     setLogs([]);
     setCurrentStep(0);
     setStepName('');
+    setAnalysisState(null);
+    setActiveReportTab(0);
   };
 
   return (
@@ -110,7 +151,7 @@ function App() {
             color="text.secondary"
             sx={{ mb: 4, textAlign: 'center' }}
           >
-            URLを入力するだけで、WCAG準拠状況を瞬時に分析します
+            URLを入力するだけで、WCAG準拠状況を簡単に分析します
           </Typography>
 
           <UrlInput
@@ -145,6 +186,12 @@ function App() {
             currentStep={currentStep}
             totalSteps={totalSteps}
             stepName={stepName}
+            // 複数URL分析用props（Task 7.1）
+            currentPageIndex={analysisState?.currentPageIndex}
+            totalPages={analysisState?.targetUrls.length}
+            currentPageUrl={analysisState ? analysisState.targetUrls[analysisState.currentPageIndex] : undefined}
+            currentPageTitle={analysisState?.currentPageTitle}
+            completedPages={analysisState?.completedPageIndexes}
           />
         </Box>
       )}

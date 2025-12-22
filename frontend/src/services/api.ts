@@ -86,6 +86,18 @@ export async function analyzeUrl(request: AnalyzeRequest): Promise<AnalyzeRespon
 }
 
 /**
+ * ページ進捗データ（type以外のフィールド）
+ * @requirement 5.2 - SSEイベント受信処理にPageProgressEventのケースを追加する
+ */
+export interface PageProgressData {
+  pageIndex: number;
+  totalPages: number;
+  pageUrl: string;
+  pageTitle: string;
+  status: 'started' | 'analyzing' | 'completed' | 'failed';
+}
+
+/**
  * SSEイベントのコールバック型
  */
 export interface SSECallbacks {
@@ -94,6 +106,8 @@ export interface SSECallbacks {
   onComplete?: (report: AccessibilityReport) => void;
   onError?: (message: string) => void;
   onSessionExpired?: () => void;
+  /** 複数URL分析時のページ進捗コールバック */
+  onPageProgress?: (data: PageProgressData) => void;
 }
 
 /**
@@ -195,6 +209,143 @@ export function analyzeUrlWithSSE(
             message: data.message,
           });
           eventSource.close();
+          break;
+      }
+    } catch {
+      // JSONパースエラーは無視
+    }
+  };
+
+  eventSource.onerror = () => {
+    callbacks.onError?.('サーバーとの接続が切断されました');
+    eventSource.close();
+  };
+
+  return {
+    cancel: () => {
+      eventSource.close();
+    },
+  };
+}
+
+/**
+ * 複数URL分析用リクエスト
+ * @requirement 5.1 - 配列形式で複数URLを受け付けるエンドポイントを提供する
+ */
+export interface MultiAnalyzeRequest {
+  urls: string[];
+  auth?: AnalyzeRequest['auth'];
+}
+
+/**
+ * SSEストリーミングで複数URLのアクセシビリティ分析を実行
+ * @requirement 5.1 - SSE接続URLの複数URL対応
+ */
+export function analyzeMultipleUrlsWithSSE(
+  request: MultiAnalyzeRequest,
+  callbacks: SSECallbacks,
+  options?: SSEAnalyzeOptions
+): { cancel: () => void } {
+  const baseUrl = API_BASE_URL || window.location.origin;
+  const url = new URL(`${baseUrl}/api/analyze-stream`);
+
+  // 複数URLを配列形式のパラメータとして設定（urls[]=...&urls[]=...）
+  for (const targetUrl of request.urls) {
+    url.searchParams.append('urls[]', targetUrl);
+  }
+
+  // セッションベース認証パラメータを追加
+  if (options?.sessionId) {
+    url.searchParams.set('sessionId', options.sessionId);
+    if (options.passphrase) {
+      url.searchParams.set('passphrase', options.passphrase);
+    }
+  }
+
+  // 認証パラメータを追加（手動認証）
+  if (request.auth) {
+    url.searchParams.set('authType', request.auth.type);
+    if (request.auth.username) url.searchParams.set('authUsername', request.auth.username);
+    if (request.auth.password) url.searchParams.set('authPassword', request.auth.password);
+    if (request.auth.token) url.searchParams.set('authToken', request.auth.token);
+    if (request.auth.cookies) url.searchParams.set('authCookies', request.auth.cookies);
+    if (request.auth.loginUrl) url.searchParams.set('authLoginUrl', request.auth.loginUrl);
+    if (request.auth.usernameSelector) url.searchParams.set('authUsernameSelector', request.auth.usernameSelector);
+    if (request.auth.passwordSelector) url.searchParams.set('authPasswordSelector', request.auth.passwordSelector);
+    if (request.auth.submitSelector) url.searchParams.set('authSubmitSelector', request.auth.submitSelector);
+    if (request.auth.successUrlPattern) url.searchParams.set('authSuccessUrlPattern', request.auth.successUrlPattern);
+  }
+
+  const eventSource = new EventSource(url.toString());
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data: SSEEvent = JSON.parse(event.data);
+
+      switch (data.type) {
+        case 'log':
+          callbacks.onLog?.({
+            timestamp: data.timestamp,
+            type: 'info',
+            message: data.message,
+          });
+          break;
+
+        case 'progress':
+          callbacks.onProgress?.(data.step, data.total, data.stepName);
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'progress',
+            message: `[${data.step}/${data.total}] ${data.stepName}`,
+          });
+          break;
+
+        case 'violation':
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'violation',
+            message: `違反検出: ${data.rule} (${data.impact}) - ${data.count}件`,
+          });
+          break;
+
+        case 'complete':
+          callbacks.onComplete?.(data.report);
+          eventSource.close();
+          break;
+
+        case 'error':
+          callbacks.onError?.(data.message);
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'error',
+            message: data.message,
+          });
+          eventSource.close();
+          break;
+
+        case 'session_expired':
+          callbacks.onSessionExpired?.();
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'error',
+            message: data.message,
+          });
+          eventSource.close();
+          break;
+
+        case 'page_progress':
+          callbacks.onPageProgress?.({
+            pageIndex: data.pageIndex,
+            totalPages: data.totalPages,
+            pageUrl: data.pageUrl,
+            pageTitle: data.pageTitle,
+            status: data.status,
+          });
+          callbacks.onLog?.({
+            timestamp: new Date().toISOString(),
+            type: 'progress',
+            message: `[ページ ${data.pageIndex + 1}/${data.totalPages}] ${data.pageTitle} - ${data.status}`,
+          });
           break;
       }
     } catch {

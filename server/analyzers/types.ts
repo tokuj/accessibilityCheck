@@ -22,6 +22,12 @@ export interface PageResult {
   violations: RuleResult[];
   passes: RuleResult[];
   incomplete: RuleResult[];
+  /** ページごとのLighthouseスコア */
+  lighthouseScores?: LighthouseScores;
+  /** ページのスクリーンショット（Base64エンコード） */
+  screenshot?: string;
+  /** ページごとのAI総評 */
+  aiSummary?: AISummary;
 }
 
 // Tool execution info

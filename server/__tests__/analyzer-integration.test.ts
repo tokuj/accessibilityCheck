@@ -16,6 +16,7 @@ const mockPage = {
   waitForLoadState: vi.fn().mockResolvedValue(undefined),
   screenshot: vi.fn().mockResolvedValue(Buffer.from('fake-screenshot')),
   url: vi.fn().mockReturnValue('https://example.com'),
+  title: vi.fn().mockResolvedValue('Test Page Title'),
   close: vi.fn().mockResolvedValue(undefined),
 };
 

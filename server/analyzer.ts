@@ -7,6 +7,8 @@ import { AuthManager } from './auth/manager';
 import type { AuthConfig, StorageState } from './auth/types';
 import { GeminiService } from './services/gemini';
 import type { ProgressCallback, SSEEvent } from './analyzers/sse-types';
+import { getTimeoutConfig } from './config';
+import { setupAdBlocking, formatTimeoutError } from './utils';
 
 // Re-export types for backward compatibility
 export type { RuleResult, AccessibilityReport } from './analyzers/types';
@@ -116,6 +118,9 @@ export async function analyzeUrl(
   emitProgress(1, 4, 'axe-core', onProgress);
   emitLog('  [1/4] axe-core 分析開始...', onProgress);
 
+  // タイムアウト設定を取得
+  const timeoutConfig = getTimeoutConfig();
+
   // フォームログインのブラウザがある場合はそれを使用、なければ新規起動
   let browser: import('playwright').Browser;
   let page: import('playwright').Page;
@@ -127,6 +132,13 @@ export async function analyzeUrl(
     browser = formLoginBrowser;
     page = formLoginPage;
     needsNewBrowser = false;
+
+    // Req 1.4: ページ作成時にデフォルトタイムアウトを設定
+    page.setDefaultTimeout(timeoutConfig.axeTimeout);
+
+    // Req 5.1: リソースブロック機能を適用（広告リクエストをブロック）
+    const blockingResult = await setupAdBlocking(page);
+    console.log(`[Analyzer] 広告ブロック設定完了 - パターン数: ${blockingResult.patterns.length}`);
 
     // 同一オリジンかチェック
     const currentOrigin = new URL(page.url()).origin;
@@ -146,7 +158,8 @@ export async function analyzeUrl(
     } else {
       // 別オリジン: page.goto() + Firebase認証復元待ち
       console.log('[Analyzer] 別オリジンへ移動（フルリロード）:', targetUrl);
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      // Req 4.4: ページ読み込みタイムアウトを90秒に延長
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: timeoutConfig.pageLoadTimeout });
       // Firebase認証の復元を待つ
       try {
         await page.waitForFunction(
@@ -195,12 +208,20 @@ export async function analyzeUrl(
 
     const context = await browser.newContext(contextOptions);
     page = await context.newPage();
+
+    // Req 1.4: ページ作成時にデフォルトタイムアウトを設定
+    page.setDefaultTimeout(timeoutConfig.axeTimeout);
+
+    // Req 5.1: リソースブロック機能を適用（広告リクエストをブロック）
+    const blockingResult = await setupAdBlocking(page);
+    console.log(`[Analyzer] 広告ブロック設定完了 - パターン数: ${blockingResult.patterns.length}`);
   }
 
   try {
     // フォームログインで既にナビゲーション済みの場合はスキップ
     if (!alreadyNavigated) {
-      await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 60000 });
+      // Req 4.4: ページ読み込みタイムアウトを90秒に延長
+      await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: timeoutConfig.pageLoadTimeout });
       console.log('[Analyzer] ターゲットURL読み込み完了:', page.url());
     }
 
@@ -234,9 +255,10 @@ export async function analyzeUrl(
       if (error.message.includes('Target closed') || error.message.includes('Target page, context or browser has been closed')) {
         throw new Error('ページへのアクセス中に接続が切断されました。URLを確認してください。');
       }
-      // タイムアウトエラー
+      // Req 7.1: タイムアウトエラーの詳細化
       if (error.name === 'TimeoutError') {
-        throw new Error('ページの読み込みがタイムアウトしました（60秒）。サイトが重い、またはアクセスできない可能性があります。');
+        const errorMessage = formatTimeoutError('page-load', targetUrl, timeoutConfig.pageLoadTimeout);
+        throw new Error(errorMessage);
       }
     }
     throw error;

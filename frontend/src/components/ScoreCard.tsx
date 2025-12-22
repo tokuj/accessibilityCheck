@@ -7,6 +7,8 @@ import type { CategoryScore } from '../utils/scoreCalculator';
 interface ScoreCardProps {
   totalScore: number;
   categories: CategoryScore[];
+  passCount: number;
+  violationCount: number;
 }
 
 function CategoryProgressBar({ category }: { category: CategoryScore }) {
@@ -45,7 +47,7 @@ function CategoryProgressBar({ category }: { category: CategoryScore }) {
   );
 }
 
-export function ScoreCard({ totalScore, categories }: ScoreCardProps) {
+export function ScoreCard({ totalScore, categories, passCount, violationCount }: ScoreCardProps) {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
@@ -68,6 +70,28 @@ export function ScoreCard({ totalScore, categories }: ScoreCardProps) {
             </Typography>
           </Typography>
         </Box>
+      </Box>
+
+      {/* 算出基準 */}
+      <Box
+        sx={{
+          mb: 3,
+          p: 2,
+          bgcolor: 'grey.50',
+          borderRadius: 1,
+          border: '1px solid',
+          borderColor: 'grey.200',
+        }}
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          算出方法
+        </Typography>
+        <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+          {passCount} ÷ ({passCount} + {violationCount}) × 100 = {totalScore}点
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          ※ パス数 ÷ (パス数 + 違反数) × 100　―　axe-core、pa11y、Lighthouseの検出結果を統合
+        </Typography>
       </Box>
 
       <Box

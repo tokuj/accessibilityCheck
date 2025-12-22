@@ -18,6 +18,12 @@ export interface PageResult {
   violations: RuleResult[];
   passes: RuleResult[];
   incomplete: RuleResult[];
+  /** ページごとのLighthouseスコア */
+  lighthouseScores?: LighthouseScores;
+  /** ページのスクリーンショット（Base64エンコード） */
+  screenshot?: string;
+  /** ページごとのAI総評 */
+  aiSummary?: AISummary;
 }
 
 export interface ToolInfo {
@@ -171,9 +177,28 @@ export interface SessionExpiredEvent {
 }
 
 /**
+ * ページ分析進捗イベント（複数URL分析用）
+ * 各ページの分析開始/進捗/完了を通知
+ * @requirement 5.2 - 各URLを順番に分析し、進捗をSSEで通知する
+ */
+export interface PageProgressEvent {
+  type: 'page_progress';
+  /** 現在のページインデックス（0始まり） */
+  pageIndex: number;
+  /** 総ページ数 */
+  totalPages: number;
+  /** 現在のページURL */
+  pageUrl: string;
+  /** 現在のページタイトル */
+  pageTitle: string;
+  /** ページの分析ステータス */
+  status: 'started' | 'analyzing' | 'completed' | 'failed';
+}
+
+/**
  * 全SSEイベントのユニオン型
  */
-export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent;
+export type SSEEvent = LogEvent | ProgressEvent | ViolationEvent | CompleteEvent | ErrorEvent | SessionExpiredEvent | PageProgressEvent;
 
 /**
  * ログエントリ（UI表示用）
@@ -248,4 +273,24 @@ export interface SessionManagerState {
   authStatus: AuthStatus;
   isLoading: boolean;
   error: string | null;
+}
+
+// ============================================
+// 複数URL分析関連の型定義
+// ============================================
+
+/**
+ * 複数URL分析の進捗状態
+ * @requirement 6.1 - 複数のAccessibilityReportを配列として管理する状態を持つ
+ * @requirement 6.2 - 各レポートに対応するURL情報とページタイトルを保持する
+ */
+export interface AnalysisState {
+  /** 分析対象URLリスト（最大4件） */
+  targetUrls: string[];
+  /** 現在分析中のページインデックス（0始まり） */
+  currentPageIndex: number;
+  /** 分析完了済みページのインデックス配列 */
+  completedPageIndexes: number[];
+  /** 現在分析中のページタイトル */
+  currentPageTitle: string;
 }

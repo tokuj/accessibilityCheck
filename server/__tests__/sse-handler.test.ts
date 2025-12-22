@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { formatSSEData, sendSSEEvent, parseAuthFromQuery, parseSessionFromQuery } from '../sse-handler';
+import { formatSSEData, sendSSEEvent, parseAuthFromQuery, parseSessionFromQuery, parseUrlsFromQuery } from '../sse-handler';
 import type { SSEEvent } from '../analyzers/sse-types';
 import type { Response, Request } from 'express';
 
@@ -176,6 +176,113 @@ describe('SSEハンドラー', () => {
         sessionId: 'session-123',
         passphrase: 'my-secret',
       });
+    });
+  });
+
+  describe('parseUrlsFromQuery', () => {
+    it('単一のurl文字列パラメータを配列として返す', () => {
+      const query: Request['query'] = {
+        url: 'https://example.com',
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result).toEqual({
+        urls: ['https://example.com'],
+        error: null,
+      });
+    });
+
+    it('urls[]配列パラメータを正しく配列として返す', () => {
+      const query: Request['query'] = {
+        'urls[]': ['https://example.com/page1', 'https://example.com/page2'],
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result).toEqual({
+        urls: ['https://example.com/page1', 'https://example.com/page2'],
+        error: null,
+      });
+    });
+
+    it('単一のurls[]を配列に変換する', () => {
+      const query: Request['query'] = {
+        'urls[]': 'https://example.com/single',
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result).toEqual({
+        urls: ['https://example.com/single'],
+        error: null,
+      });
+    });
+
+    it('URLが未指定の場合はエラーを返す', () => {
+      const query: Request['query'] = {};
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toEqual([]);
+      expect(result.error).toBe('URLが指定されていません');
+    });
+
+    it('無効なURL形式の場合はエラーを返す', () => {
+      const query: Request['query'] = {
+        url: 'not-a-valid-url',
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toEqual([]);
+      expect(result.error).toContain('無効なURL形式');
+    });
+
+    it('配列内に無効なURLが含まれる場合はエラーを返す', () => {
+      const query: Request['query'] = {
+        'urls[]': ['https://example.com', 'invalid-url'],
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toEqual([]);
+      expect(result.error).toContain('無効なURL形式');
+    });
+
+    it('URL数が0件の場合はエラーを返す', () => {
+      const query: Request['query'] = {
+        'urls[]': [],
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toEqual([]);
+      expect(result.error).toBe('URLが指定されていません');
+    });
+
+    it('URL数が4件を超える場合はエラーを返す', () => {
+      const query: Request['query'] = {
+        'urls[]': [
+          'https://example.com/1',
+          'https://example.com/2',
+          'https://example.com/3',
+          'https://example.com/4',
+          'https://example.com/5',
+        ],
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toEqual([]);
+      expect(result.error).toBe('URLは1件以上4件以下で指定してください');
+    });
+
+    it('4件以内のURLは正常に処理される', () => {
+      const query: Request['query'] = {
+        'urls[]': [
+          'https://example.com/1',
+          'https://example.com/2',
+          'https://example.com/3',
+          'https://example.com/4',
+        ],
+      };
+
+      const result = parseUrlsFromQuery(query);
+      expect(result.urls).toHaveLength(4);
+      expect(result.error).toBeNull();
     });
   });
 });

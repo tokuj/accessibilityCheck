@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -16,8 +16,9 @@ import { ViolationsTable } from './ViolationsTable';
 import { PassesTable } from './PassesTable';
 import { IncompleteTable } from './IncompleteTable';
 import { LighthouseScores } from './LighthouseScores';
+import { PageTabs } from './PageTabs';
 import type { AccessibilityReport, RuleResult } from '../types/accessibility';
-import { calculateScores } from '../utils/scoreCalculator';
+import { calculateScores, calculatePageScores } from '../utils/scoreCalculator';
 import { exportAllResultsToCsv, type ResultWithPage } from '../utils/csvExport';
 
 interface ReportSummaryProps {
@@ -49,13 +50,60 @@ function TabPanel(props: TabPanelProps) {
 
 export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   const [tabValue, setTabValue] = useState(0);
-  const scores = calculateScores(report);
+  // アクティブなページインデックス（複数ページタブ用、Task 9.1）
+  const [activePageIndex, setActivePageIndex] = useState(0);
+
+  // 複数ページかどうかを判定
+  const isMultiPage = report.pages.length > 1;
+
+  // 現在アクティブなページ（複数ページ時は選択されたページ、単一ページ時は最初のページ）
+  const activePage = report.pages[activePageIndex] || report.pages[0];
+
+  // スコア計算（複数ページ時はアクティブページ、単一ページ時はレポート全体）
+  const scores = useMemo(() => {
+    if (isMultiPage) {
+      return calculatePageScores(activePage);
+    }
+    return calculateScores(report);
+  }, [isMultiPage, activePage, report]);
 
   // Collect all violations
   const allViolations: RuleResult[] = report.pages.flatMap((page) => page.violations);
 
+  // 表示用URL（複数ページ時はアクティブページのURL、単一ページ時はpropsのurl）
+  const currentUrl = isMultiPage ? activePage.url : url;
   // Truncate URL for display
-  const displayUrl = url.length > 50 ? url.substring(0, 50) + '...' : url;
+  const displayUrl = currentUrl.length > 50 ? currentUrl.substring(0, 50) + '...' : currentUrl;
+
+  // PageTabs用のページ情報を生成（総合スコアを計算）
+  const pageTabsData = report.pages.map((page) => {
+    const pageScores = calculatePageScores(page);
+    return {
+      title: page.name,
+      url: page.url,
+      violationCount: page.violations.length,
+      // 総合スコアを表示（Lighthouseスコアではなく、違反/パス比率から計算）
+      accessibilityScore: pageScores.totalScore,
+    };
+  });
+
+  // 現在のスクリーンショット（複数ページ時はアクティブページのもの、フォールバック付き）
+  const currentScreenshot = isMultiPage
+    ? activePage.screenshot || report.screenshot
+    : report.screenshot;
+
+  // 詳細タブ用のカウント（複数ページ時はアクティブページ、単一ページ時は全体サマリー）
+  const detailCounts = isMultiPage
+    ? {
+        violations: activePage.violations.length,
+        passes: activePage.passes.length,
+        incomplete: activePage.incomplete.length,
+      }
+    : {
+        violations: report.summary.totalViolations,
+        passes: report.summary.totalPasses,
+        incomplete: report.summary.totalIncomplete,
+      };
 
   // CSV出力用に全結果を収集
   const handleDownloadCsv = () => {
@@ -121,6 +169,17 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   return (
     <Card sx={{ maxWidth: 1400, mx: 'auto', mb: 4 }}>
       <CardContent sx={{ p: 4 }}>
+        {/* ページタブ（複数ページ時のみ表示、Task 9.1） */}
+        {isMultiPage && (
+          <Box sx={{ mb: 3 }}>
+            <PageTabs
+              pages={pageTabsData}
+              activeIndex={activePageIndex}
+              onChange={setActivePageIndex}
+            />
+          </Box>
+        )}
+
         {/* Header with URL and close button */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box
@@ -159,10 +218,10 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         </Box>
 
         {/* Screenshot */}
-        {report.screenshot && (
+        {currentScreenshot && (
           <Box sx={{ mb: 3, borderRadius: 2, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
             <img
-              src={report.screenshot}
+              src={currentScreenshot}
               alt="ページスクリーンショット"
               style={{ width: '100%', display: 'block' }}
             />
@@ -199,20 +258,28 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         )}
 
         {/* Score Card */}
-        <ScoreCard totalScore={scores.totalScore} categories={scores.categories} />
+        <ScoreCard
+          totalScore={scores.totalScore}
+          categories={scores.categories}
+          passCount={isMultiPage ? activePage.passes.length : report.summary.totalPasses}
+          violationCount={isMultiPage ? activePage.violations.length : report.summary.totalViolations}
+        />
 
-        {/* Lighthouse Scores */}
-        {report.lighthouseScores && (
+        {/* Lighthouse Scores（複数ページ時はアクティブページのスコア） */}
+        {(isMultiPage ? activePage.lighthouseScores : report.lighthouseScores) && (
           <Box sx={{ mt: 3 }}>
-            <LighthouseScores scores={report.lighthouseScores} />
+            <LighthouseScores scores={(isMultiPage ? activePage.lighthouseScores : report.lighthouseScores)!} />
           </Box>
         )}
 
         {/* Divider */}
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
 
-        {/* Improvement List */}
-        <ImprovementList violations={allViolations} aiSummary={report.aiSummary} />
+        {/* Improvement List（複数ページ時はアクティブページのデータ） */}
+        <ImprovementList
+          violations={isMultiPage ? activePage.violations : allViolations}
+          aiSummary={isMultiPage ? activePage.aiSummary : report.aiSummary}
+        />
 
         {/* Divider */}
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
@@ -238,17 +305,17 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
             aria-label="詳細結果タブ"
           >
             <Tab
-              label={`違反 (${report.summary.totalViolations})`}
+              label={`違反 (${detailCounts.violations})`}
               id="detail-tab-0"
               aria-controls="detail-tabpanel-0"
             />
             <Tab
-              label={`パス (${report.summary.totalPasses})`}
+              label={`パス (${detailCounts.passes})`}
               id="detail-tab-1"
               aria-controls="detail-tabpanel-1"
             />
             <Tab
-              label={`要確認 (${report.summary.totalIncomplete})`}
+              label={`要確認 (${detailCounts.incomplete})`}
               id="detail-tab-2"
               aria-controls="detail-tabpanel-2"
             />
@@ -256,13 +323,13 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         </Box>
 
         <TabPanel value={tabValue} index={0}>
-          <ViolationsTable pages={report.pages} />
+          <ViolationsTable pages={isMultiPage ? [activePage] : report.pages} />
         </TabPanel>
         <TabPanel value={tabValue} index={1}>
-          <PassesTable pages={report.pages} />
+          <PassesTable pages={isMultiPage ? [activePage] : report.pages} />
         </TabPanel>
         <TabPanel value={tabValue} index={2}>
-          <IncompleteTable pages={report.pages} />
+          <IncompleteTable pages={isMultiPage ? [activePage] : report.pages} />
         </TabPanel>
       </CardContent>
     </Card>

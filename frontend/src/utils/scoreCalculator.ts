@@ -1,4 +1,4 @@
-import type { AccessibilityReport, RuleResult } from '../types/accessibility';
+import type { AccessibilityReport, PageResult, RuleResult } from '../types/accessibility';
 
 export interface CategoryScore {
   name: string;
@@ -38,6 +38,69 @@ export function calculateScores(report: AccessibilityReport): ScoreResult {
     allPasses.push(...page.passes);
     allViolations.push(...page.violations);
   }
+
+  // Total score
+  const totalItems = allPasses.length + allViolations.length;
+  const totalScore = totalItems > 0
+    ? Math.round((allPasses.length / totalItems) * 100)
+    : 100;
+
+  // Category scores
+  const categoryStats: Record<string, { passes: number; violations: number }> = {};
+
+  for (const cat of WCAG_CATEGORIES) {
+    categoryStats[cat.prefix] = { passes: 0, violations: 0 };
+  }
+
+  for (const pass of allPasses) {
+    for (const criteria of pass.wcagCriteria) {
+      const cat = getCategoryForCriteria(criteria);
+      if (cat && categoryStats[cat]) {
+        categoryStats[cat].passes++;
+      }
+    }
+  }
+
+  for (const violation of allViolations) {
+    for (const criteria of violation.wcagCriteria) {
+      const cat = getCategoryForCriteria(criteria);
+      if (cat && categoryStats[cat]) {
+        categoryStats[cat].violations++;
+      }
+    }
+  }
+
+  const categories: CategoryScore[] = WCAG_CATEGORIES.map(cat => {
+    const stats = categoryStats[cat.prefix];
+    const total = stats.passes + stats.violations;
+    const score = total > 0 ? Math.round((stats.passes / total) * 100) : 100;
+    return {
+      name: cat.name,
+      nameEn: cat.nameEn,
+      score,
+      passes: stats.passes,
+      total,
+    };
+  });
+
+  // Generate summary
+  const summary = generateSummary(totalScore, allViolations.length, categories);
+
+  return {
+    totalScore,
+    categories,
+    summary,
+  };
+}
+
+/**
+ * 単一ページのスコアを計算する
+ * @param page - 対象ページ
+ * @returns スコア結果
+ */
+export function calculatePageScores(page: PageResult): ScoreResult {
+  const allPasses = page.passes;
+  const allViolations = page.violations;
 
   // Total score
   const totalItems = allPasses.length + allViolations.length;

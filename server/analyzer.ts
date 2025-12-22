@@ -86,6 +86,7 @@ export async function analyzeUrl(
   let allIncomplete: RuleResult[] = [];
   let lighthouseScores: LighthouseScores | undefined;
   let screenshot: string | undefined;
+  let pageTitle: string | undefined;
 
   // 認証マネージャーを初期化
   const authManager = new AuthManager(authConfig, targetUrl);
@@ -232,6 +233,10 @@ export async function analyzeUrl(
     });
     screenshot = `data:image/png;base64,${screenshotBuffer.toString('base64')}`;
 
+    // ページタイトル取得（Requirement 5.6）
+    pageTitle = await page.title();
+    console.log('[Analyzer] ページタイトル取得:', pageTitle || '(無題)');
+
     // Run axe-core
     const axeResult = await analyzeWithAxe(page);
     allViolations.push(...axeResult.violations);
@@ -324,7 +329,8 @@ export async function analyzeUrl(
     });
   }
 
-  const pageName = new URL(targetUrl).hostname;
+  // ページ名: タイトルがあればタイトル、なければホスト名をフォールバック
+  const pageName = pageTitle || new URL(targetUrl).hostname;
   const totalDuration = toolsUsed.reduce((sum, t) => sum + t.duration, 0);
   emitLog(`  合計実行時間: ${(totalDuration / 1000).toFixed(1)}秒`, onProgress);
 
@@ -362,8 +368,13 @@ export async function analyzeUrl(
         violations: allViolations,
         passes: allPasses,
         incomplete: allIncomplete,
+        // 各ページにスクリーンショット、スコア、AI総評を含める
+        screenshot,
+        lighthouseScores,
+        aiSummary,
       },
     ],
+    // レポートレベルでも維持（後方互換性）
     screenshot,
     toolsUsed,
     lighthouseScores,

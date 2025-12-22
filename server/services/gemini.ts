@@ -5,7 +5,8 @@ import type { RuleResult, LighthouseScores, AISummary, ImpactSummary, DetectedIs
 export type GeminiError =
   | { type: 'api_error'; message: string; statusCode: number }
   | { type: 'timeout'; message: string }
-  | { type: 'rate_limit'; message: string; retryAfter: number };
+  | { type: 'rate_limit'; message: string; retryAfter: number }
+  | { type: 'parse_error'; message: string; position?: number; excerpt?: string };
 
 // Gemini APIのモデル名
 const GEMINI_MODEL = 'gemini-2.0-flash';
@@ -13,8 +14,276 @@ const GEMINI_MODEL = 'gemini-2.0-flash';
 // APIのタイムアウト（ミリ秒）
 const API_TIMEOUT_MS = 30000;
 
+// 出力トークン上限（レスポンストランケーション防止のため8192に設定）
+const MAX_OUTPUT_TOKENS = 8192;
+
+// detectedIssuesの最大件数（レスポンスサイズ制限のため）
+const MAX_DETECTED_ISSUES = 30;
+
+// リトライ設定
+const RETRY_DELAY_MS = 1000;  // 1秒
+const MAX_RETRIES = 1;        // 1回
+
 // Gemini APIのエンドポイント
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
+
+/**
+ * JSON文字列値内の制御文字をエスケープする
+ * @param text - Gemini APIからの生レスポンステキスト
+ * @returns サニタイズ済みテキスト
+ */
+export function sanitizeJsonResponse(text: string): string {
+  if (!text) {
+    return text;
+  }
+
+  let sanitized = text;
+
+  // 1. Markdownバッククォート（```json ... ``` または ``` ... ```）の除去
+  const markdownMatch = sanitized.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/);
+  if (markdownMatch) {
+    sanitized = markdownMatch[1];
+  }
+
+  // 2. JSON文字列値内の制御文字をエスケープ
+  // JSON構造を壊さないように、文字列値内のみを処理
+  // 文字列値は "..." で囲まれた部分
+  sanitized = sanitized.replace(
+    /"(?:[^"\\]|\\.)*"/g,
+    (match) => {
+      // 既にエスケープされた文字列は変更しない
+      // 未エスケープの制御文字のみをエスケープ
+      return match
+        // リテラル改行をエスケープ（既にエスケープされた\nは除く）
+        .replace(/(?<!\\)\n/g, '\\n')
+        // リテラルタブをエスケープ
+        .replace(/(?<!\\)\t/g, '\\t')
+        // リテラル復帰をエスケープ
+        .replace(/(?<!\\)\r/g, '\\r');
+    }
+  );
+
+  return sanitized;
+}
+
+/**
+ * フォールバック発動時のログ出力
+ * @param reason - フォールバック発動の理由（エラーメッセージ）
+ * @param details - オプションの詳細情報（位置情報、抜粋）
+ */
+export function logFallbackActivation(
+  reason: string,
+  details?: { position?: number; excerpt?: string }
+): void {
+  const logData: { reason: string; position?: number; excerpt?: string } = { reason };
+
+  if (details?.position !== undefined) {
+    logData.position = details.position;
+  }
+  if (details?.excerpt !== undefined) {
+    logData.excerpt = details.excerpt;
+  }
+
+  console.warn('Gemini: フォールバックAISummaryを生成しました', logData);
+}
+
+/**
+ * フォールバック用のAISummaryを生成する
+ * パース失敗時に違反情報から基本的なAISummaryを生成する
+ * @param violations - 検出された違反情報
+ * @returns フォールバックAISummary（isFallback: true）
+ */
+export function generateFallbackSummary(violations: RuleResult[]): AISummary {
+  const impactSummary = countByImpact(violations);
+  const totalCount = violations.length;
+
+  // 違反件数に応じた評価文を生成
+  let overallAssessment: string;
+  if (totalCount === 0) {
+    overallAssessment = '検出された違反は0件です。アクセシビリティ基準を満たしています。';
+  } else {
+    const criticalCount = impactSummary.critical;
+    const seriousCount = impactSummary.serious;
+
+    const highPriorityParts: string[] = [];
+    if (criticalCount > 0) {
+      highPriorityParts.push(`致命的な問題が${criticalCount}件`);
+    }
+    if (seriousCount > 0) {
+      highPriorityParts.push(`重大な問題が${seriousCount}件`);
+    }
+
+    if (highPriorityParts.length > 0) {
+      overallAssessment = `検出された違反は${totalCount}件で、${highPriorityParts.join('、')}含まれています。優先的な対応が必要です。`;
+    } else {
+      overallAssessment = `検出された違反は${totalCount}件で、中程度以下の問題です。順次改善を推奨します。`;
+    }
+  }
+
+  return {
+    overallAssessment,
+    detectedIssues: [],
+    prioritizedImprovements: [],
+    specificRecommendations: [],
+    impactSummary,
+    generatedAt: new Date().toISOString(),
+    isFallback: true,
+  };
+}
+
+/**
+ * リトライ対象のエラーかどうかを判定する
+ * @param error - GeminiError型のエラー
+ * @returns リトライ可能な場合はtrue
+ */
+export function isRetryableError(error: GeminiError): boolean {
+  // タイムアウトエラーはリトライ対象
+  if (error.type === 'timeout') {
+    return true;
+  }
+
+  // api_errorの場合
+  if (error.type === 'api_error') {
+    // 5xxエラー（サーバーエラー）はリトライ対象
+    if (error.statusCode >= 500) {
+      return true;
+    }
+    // statusCode 0 はネットワークエラーを示すのでリトライ対象
+    if (error.statusCode === 0) {
+      return true;
+    }
+    // 4xxエラーはリトライ対象外
+    return false;
+  }
+
+  // rate_limitエラーはリトライ対象外（Retry-Afterに従う）
+  if (error.type === 'rate_limit') {
+    return false;
+  }
+
+  // parse_errorはリトライ対象外
+  if (error.type === 'parse_error') {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * バックオフ待機用のスリープ関数
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 単一のGemini API呼び出しを実行する
+ * @param apiKey - Gemini APIキー
+ * @param prompt - プロンプト
+ * @param violations - 違反情報（パース用）
+ * @returns API呼び出し結果
+ */
+async function callGeminiAPI(
+  apiKey: string,
+  prompt: string,
+  violations: RuleResult[]
+): Promise<Result<AISummary, GeminiError>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ text: prompt }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: MAX_OUTPUT_TOKENS,
+            responseMimeType: 'application/json',
+          },
+        }),
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    // レート制限チェック
+    if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+      return {
+        success: false,
+        error: {
+          type: 'rate_limit',
+          message: 'レート制限に達しました',
+          retryAfter,
+        },
+      };
+    }
+
+    // その他のエラー
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `Gemini API エラー: ${response.statusText}`,
+          statusCode: response.status,
+        },
+      };
+    }
+
+    // レスポンスをパース
+    const data = await response.json();
+    const aiSummary = parseGeminiResponse(data, violations);
+
+    if (!aiSummary) {
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: 'Gemini APIからの応答をパースできませんでした',
+          statusCode: 0,
+        },
+      };
+    }
+
+    return { success: true, value: aiSummary };
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // タイムアウト
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: {
+          type: 'timeout',
+          message: 'Gemini APIへのリクエストがタイムアウトしました',
+        },
+      };
+    }
+
+    // その他のエラー（ネットワークエラーなど）
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: {
+        type: 'api_error',
+        message: `Gemini API呼び出し中にエラーが発生しました: ${message}`,
+        statusCode: 0,
+      },
+    };
+  }
+}
 
 /**
  * Gemini APIを使用したAI総評生成サービス
@@ -46,102 +315,52 @@ export const GeminiService = {
     // 2. プロンプトを構築
     const prompt = buildPrompt(violations, scores);
 
-    // 3. Gemini APIを呼び出し
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    // 3. Gemini APIを呼び出し（リトライ付き）
+    let lastError: GeminiError | null = null;
 
-      const response = await fetch(
-        `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 2048,
-              responseMimeType: 'application/json',
-            },
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      // レート制限チェック
-      if (response.status === 429) {
-        const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
-        return {
-          success: false,
-          error: {
-            type: 'rate_limit',
-            message: 'レート制限に達しました',
-            retryAfter,
-          },
-        };
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // リトライの場合は待機
+      if (attempt > 0 && lastError) {
+        console.info('Gemini: リトライを実行します', {
+          attempt,
+          delay: RETRY_DELAY_MS,
+          previousError: lastError.type,
+        });
+        await sleep(RETRY_DELAY_MS);
       }
 
-      // その他のエラー
-      if (!response.ok) {
-        return {
-          success: false,
-          error: {
-            type: 'api_error',
-            message: `Gemini API エラー: ${response.statusText}`,
-            statusCode: response.status,
-          },
-        };
+      const result = await callGeminiAPI(apiKey, prompt, violations);
+
+      if (result.success) {
+        console.log('Gemini: AI総評生成完了');
+        return result;
       }
 
-      // 4. レスポンスをパース
-      const data = await response.json();
-      const aiSummary = parseGeminiResponse(data, violations);
+      // エラーの場合
+      lastError = result.error;
 
-      if (!aiSummary) {
-        return {
-          success: false,
-          error: {
-            type: 'api_error',
-            message: 'Gemini APIからの応答をパースできませんでした',
-            statusCode: 0,
-          },
-        };
+      // リトライ対象外のエラーはすぐに返却
+      if (!isRetryableError(result.error)) {
+        console.error('Gemini: API呼び出しエラー:', result.error.message);
+        return result;
       }
 
-      console.log('Gemini: AI総評生成完了');
-      return { success: true, value: aiSummary };
-    } catch (error) {
-      // タイムアウト
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return {
-          success: false,
-          error: {
-            type: 'timeout',
-            message: 'Gemini APIへのリクエストがタイムアウトしました',
-          },
-        };
+      // リトライ回数を超えた場合
+      if (attempt === MAX_RETRIES) {
+        console.error('Gemini: リトライ上限に達しました:', result.error.message);
+        return result;
       }
-
-      // その他のエラー
-      const message = error instanceof Error ? error.message : String(error);
-      console.error('Gemini: API呼び出しエラー:', message);
-      return {
-        success: false,
-        error: {
-          type: 'api_error',
-          message: `Gemini API呼び出し中にエラーが発生しました: ${message}`,
-          statusCode: 0,
-        },
-      };
     }
+
+    // ここには到達しないはずだが、型安全のため
+    return {
+      success: false,
+      error: lastError || {
+        type: 'api_error',
+        message: '予期しないエラーが発生しました',
+        statusCode: 0,
+      },
+    };
   },
 };
 
@@ -200,7 +419,7 @@ function buildPrompt(violations: RuleResult[], scores: LighthouseScores): string
 ${violationsSummary || '違反は検出されませんでした'}
 
 ## 出力形式（JSON）
-以下の形式で回答してください。detectedIssuesには上記の主要な違反それぞれについて具体的な修正方法を記述してください：
+以下の形式で回答してください。**detectedIssuesは最大${MAX_DETECTED_ISSUES}件まで**とし、影響度の高い順（critical→serious→moderate→minor）に優先して記述してください：
 
 {
   "overallAssessment": "全体評価（必ず「検出された違反は〇件で、」から開始し、主要な問題タイプと影響度を説明する）",
@@ -244,30 +463,80 @@ function countByImpact(violations: RuleResult[]): ImpactSummary {
 }
 
 /**
+ * パースエラーから位置情報を抽出する
+ */
+function extractParseErrorPosition(error: unknown): number | undefined {
+  if (error instanceof SyntaxError) {
+    // Node.jsのJSON.parseエラーメッセージから位置を抽出
+    // 例: "Unexpected token at position 5035"
+    // 例: "Unterminated string in JSON at position 5035 (line 48 column 154)"
+    const message = error.message;
+    const positionMatch = message.match(/position (\d+)/);
+    if (positionMatch) {
+      return parseInt(positionMatch[1], 10);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * エラー位置周辺の文字列を抜粋（最大100文字）
+ */
+function extractExcerpt(text: string, position?: number): string {
+  if (position === undefined) {
+    // 位置不明の場合は先頭から100文字
+    return text.slice(0, 100);
+  }
+
+  // 位置の前後50文字ずつを抽出
+  const start = Math.max(0, position - 50);
+  const end = Math.min(text.length, position + 50);
+  let excerpt = text.slice(start, end);
+
+  // 先頭・末尾が切れている場合は省略記号を追加
+  if (start > 0) {
+    excerpt = '...' + excerpt;
+  }
+  if (end < text.length) {
+    excerpt = excerpt + '...';
+  }
+
+  // 最大100文字に制限
+  return excerpt.slice(0, 100);
+}
+
+/**
  * Gemini APIのレスポンスをパース
+ * Task 6: サニタイズ処理の統合、詳細ログ出力、フォールバック生成
  */
 function parseGeminiResponse(
   data: unknown,
   violations: RuleResult[]
 ): AISummary | null {
+  // レスポンス構造を型アサーション
+  const response = data as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ text?: string }>;
+      };
+    }>;
+  };
+
+  const rawText = response.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!rawText) {
+    console.error('Gemini: レスポンスにテキストがありません');
+    // テキストがない場合はフォールバック生成
+    logFallbackActivation('レスポンスにテキストがありません');
+    return generateFallbackSummary(violations);
+  }
+
+  // Task 6.1: サニタイズ処理の統合
+  // JSON.parse実行前にsanitizeJsonResponseを呼び出す
+  const sanitizedText = sanitizeJsonResponse(rawText);
+
   try {
-    // レスポンス構造を型アサーション
-    const response = data as {
-      candidates?: Array<{
-        content?: {
-          parts?: Array<{ text?: string }>;
-        };
-      }>;
-    };
-
-    const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) {
-      console.error('Gemini: レスポンスにテキストがありません');
-      return null;
-    }
-
     // JSONをパース
-    const parsed = JSON.parse(text) as {
+    const parsed = JSON.parse(sanitizedText) as {
       overallAssessment?: string;
       detectedIssues?: Array<{
         ruleId?: string;
@@ -283,7 +552,9 @@ function parseGeminiResponse(
     // 必須フィールドの検証
     if (!parsed.overallAssessment) {
       console.error('Gemini: overallAssessmentが見つかりません');
-      return null;
+      // Task 6.3: 必須フィールド欠落時もフォールバック生成
+      logFallbackActivation('overallAssessmentが見つかりません');
+      return generateFallbackSummary(violations);
     }
 
     // 影響度サマリーがない場合は再計算
@@ -315,7 +586,20 @@ function parseGeminiResponse(
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error('Gemini: レスポンスのパースに失敗:', error);
-    return null;
+    // Task 6.2: パースエラー時の詳細ログ出力
+    const position = extractParseErrorPosition(error);
+    const excerpt = extractExcerpt(sanitizedText, position);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    console.error('Gemini: JSONパースエラー', {
+      message: errorMessage,
+      position,
+      excerpt,
+    });
+
+    // Task 6.3: フォールバック生成の統合
+    // パース失敗時はフォールバックAISummaryを生成して返却
+    logFallbackActivation(errorMessage, { position, excerpt });
+    return generateFallbackSummary(violations);
   }
 }

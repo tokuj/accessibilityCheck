@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SecretManagerService } from './secret-manager';
+import { SecretManagerService } from '../secret-manager';
 
 describe('SecretManagerService', () => {
   let mockAccessSecretVersion: ReturnType<typeof vi.fn>;

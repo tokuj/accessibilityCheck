@@ -1,5 +1,13 @@
 import type { LighthouseResult, RuleResult, LighthouseScores, ImpactLevel } from './types';
 import { chromium } from 'playwright';
+import { getAdBlockingConfig, getTimeoutConfig } from '../config';
+import {
+  createAnalyzerTiming,
+  completeAnalyzerTiming,
+  formatTimeoutError,
+  logAnalyzerStart,
+  logAnalyzerComplete,
+} from '../utils';
 
 export const LIGHTHOUSE_VERSION = '12.0.0';
 
@@ -8,6 +16,25 @@ export const LIGHTHOUSE_VERSION = '12.0.0';
  */
 export interface LighthouseAuthOptions {
   headers?: Record<string, string>;  // Cookie, Authorization等
+}
+
+/**
+ * Lighthouse分析オプション
+ *
+ * Requirements: 3.1, 3.2, 3.3, 3.4
+ */
+export interface LighthouseAnalyzerOptions extends LighthouseAuthOptions {
+  /** maxWaitForLoad（ms、デフォルト: 90000） */
+  maxWaitForLoad?: number;
+
+  /** maxWaitForFcp（ms、デフォルト: 60000） */
+  maxWaitForFcp?: number;
+
+  /** 広告をブロックするか（デフォルト: true） */
+  blockAds?: boolean;
+
+  /** 追加のブロックURLパターン */
+  additionalBlockedPatterns?: readonly string[];
 }
 
 // Dynamic imports for ESM modules
@@ -70,9 +97,20 @@ function extractWcagFromAuditId(id: string): string[] {
 
 export async function analyzeWithLighthouse(
   url: string,
-  authOptions?: LighthouseAuthOptions
+  options?: LighthouseAnalyzerOptions
 ): Promise<LighthouseResult> {
   const startTime = Date.now();
+
+  // 設定を取得
+  const adBlockingConfig = getAdBlockingConfig();
+  const timeoutConfig = getTimeoutConfig();
+
+  // デフォルト値の解決（blockAdsはundefinedの場合にtrueとなる）
+  const blockAds = options?.blockAds !== false && adBlockingConfig.enabled;
+
+  // Req 7.2: 分析開始ログを記録
+  logAnalyzerStart('lighthouse', url);
+  const timing = createAnalyzerTiming('lighthouse', url);
 
   const { lighthouse, chromeLauncher } = await loadLighthouse();
   let chrome: Awaited<ReturnType<typeof chromeLauncher.launch>> | null = null;
@@ -85,21 +123,43 @@ export async function analyzeWithLighthouse(
     });
 
     // Lighthouse設定を構築
-    const options: Parameters<typeof lighthouse>[1] = {
+    const lighthouseOptions: Parameters<typeof lighthouse>[1] = {
       logLevel: 'error' as const,
       output: 'json' as const,
       port: chrome.port,
       onlyCategories: ['accessibility', 'performance', 'best-practices', 'seo'],
+      // タイムアウト設定（Req 3.1, 3.2）
+      maxWaitForLoad: options?.maxWaitForLoad ?? timeoutConfig.lighthouseMaxWaitForLoad,
+      maxWaitForFcp: options?.maxWaitForFcp ?? timeoutConfig.lighthouseMaxWaitForFcp,
     };
 
-    // 認証ヘッダーを設定
-    if (authOptions?.headers && Object.keys(authOptions.headers).length > 0) {
-      options.extraHeaders = authOptions.headers;
-      // セッションを維持するためstorageResetを無効化
-      options.disableStorageReset = true;
+    // 広告ブロック設定（Req 3.3, 3.4）
+    if (blockAds || options?.additionalBlockedPatterns) {
+      const blockedPatterns: string[] = [];
+
+      // 広告パターンを追加
+      if (blockAds) {
+        blockedPatterns.push(...adBlockingConfig.blockedUrlPatterns);
+      }
+
+      // 追加パターンを追加
+      if (options?.additionalBlockedPatterns) {
+        blockedPatterns.push(...options.additionalBlockedPatterns);
+      }
+
+      if (blockedPatterns.length > 0) {
+        lighthouseOptions.blockedUrlPatterns = blockedPatterns;
+      }
     }
 
-    const runnerResult = await lighthouse(url, options);
+    // 認証ヘッダーを設定
+    if (options?.headers && Object.keys(options.headers).length > 0) {
+      lighthouseOptions.extraHeaders = options.headers;
+      // セッションを維持するためstorageResetを無効化
+      lighthouseOptions.disableStorageReset = true;
+    }
+
+    const runnerResult = await lighthouse(url, lighthouseOptions);
 
     if (!runnerResult || !runnerResult.lhr) {
       throw new Error('Lighthouse did not return results');
@@ -150,6 +210,10 @@ export async function analyzeWithLighthouse(
 
     const duration = Date.now() - startTime;
 
+    // Req 7.2, 7.3: 分析完了ログを記録（60秒超過警告を含む）
+    const completedTiming = completeAnalyzerTiming(timing, 'success');
+    logAnalyzerComplete(completedTiming);
+
     return {
       violations,
       passes,
@@ -158,8 +222,26 @@ export async function analyzeWithLighthouse(
       scores,
     };
   } catch (error) {
-    console.error('Lighthouse analysis error:', error);
     const duration = Date.now() - startTime;
+
+    // Req 7.1, 7.4: タイムアウトエラーの詳細化
+    const isTimeout = error instanceof Error && (
+      error.message.includes('timeout') ||
+      error.message.includes('Timeout') ||
+      error.name === 'TimeoutError'
+    );
+
+    if (isTimeout) {
+      const errorMessage = formatTimeoutError('lighthouse', url, timeoutConfig.lighthouseMaxWaitForLoad, duration);
+      const completedTiming = completeAnalyzerTiming(timing, 'timeout');
+      logAnalyzerComplete(completedTiming, errorMessage);
+      console.error('Lighthouse timeout:', errorMessage);
+    } else {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const completedTiming = completeAnalyzerTiming(timing, 'error');
+      logAnalyzerComplete(completedTiming, errorMessage);
+      console.error('Lighthouse analysis error:', error);
+    }
 
     return {
       violations: [],

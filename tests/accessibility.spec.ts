@@ -4,6 +4,10 @@ import AxeBuilder from '@axe-core/playwright';
 /**
  * インテージ公式サイト アクセシビリティテスト
  * WCAG 2.1 Level AA 準拠チェック
+ *
+ * タイムアウト対策として以下を適用:
+ * - domcontentloaded + 2秒待機 (Requirements: 6.3)
+ * - setLegacyMode(true) + 広告要素除外 (Requirements: 6.4)
  */
 
 // テスト対象ページの定義
@@ -18,17 +22,57 @@ const TEST_PAGES = [
 // WCAG AA準拠タグ
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
+/**
+ * 広告関連CSSセレクタ
+ * axe-coreの.exclude()で除外するセレクタリスト
+ * Requirements: 6.4
+ */
+const AD_SELECTORS = [
+  'iframe[src*="ads"]',
+  'iframe[src*="doubleclick"]',
+  'iframe[src*="googlesyndication"]',
+  '[class*="ad-"]',
+  '[class*="ads-"]',
+  '.adsbygoogle',
+  '.ad-container',
+  '.advertisement',
+  '[id*="ad-"]',
+  '[id*="ads-"]',
+  '[data-ad-slot]',
+  '[data-ad-client]',
+];
+
+/**
+ * AxeBuilderに広告除外設定を適用する
+ * @param builder - AxeBuilderインスタンス
+ * @returns 設定済みのAxeBuilder
+ */
+function applyAdExclusions(builder: AxeBuilder): AxeBuilder {
+  for (const selector of AD_SELECTORS) {
+    builder = builder.exclude(selector);
+  }
+  return builder;
+}
+
 test.describe('インテージ公式サイト アクセシビリティテスト', () => {
   // 各ページごとのアクセシビリティテスト
   for (const targetPage of TEST_PAGES) {
     test(`${targetPage.name} - WCAG 2.1 AA準拠チェック`, async ({ page }) => {
-      // ページ読み込み（動的コンテンツの読み込み完了を待つ）
-      await page.goto(targetPage.url, { waitUntil: 'networkidle' });
+      // ページ読み込み: domcontentloadedで高速化 (Requirements: 6.3)
+      await page.goto(targetPage.url, { waitUntil: 'domcontentloaded' });
+
+      // 2秒の安定化待機 (Requirements: 6.3)
+      await page.waitForTimeout(2000);
 
       // アクセシビリティスキャン実行
-      const accessibilityScanResults = await new AxeBuilder({ page })
+      let axeBuilder = new AxeBuilder({ page })
         .withTags(WCAG_TAGS)
-        .analyze();
+        .setLegacyMode(true); // クロスオリジンiframeのペナルティを回避 (Requirements: 6.4)
+
+      // 広告要素を除外 (Requirements: 6.4)
+      axeBuilder = applyAdExclusions(axeBuilder);
+
+      const accessibilityScanResults = await axeBuilder.analyze();
 
       // 違反がある場合は詳細を出力
       if (accessibilityScanResults.violations.length > 0) {
@@ -54,13 +98,22 @@ test.describe('インテージ公式サイト アクセシビリティテスト'
 
   // サードパーティ要素を除外したテスト（オプション）
   test('トップページ - サードパーティ要素除外版', async ({ page }) => {
-    await page.goto('https://www.intage.co.jp/', { waitUntil: 'networkidle' });
+    // ページ読み込み: domcontentloadedで高速化 (Requirements: 6.3)
+    await page.goto('https://www.intage.co.jp/', { waitUntil: 'domcontentloaded' });
 
-    const accessibilityScanResults = await new AxeBuilder({ page })
+    // 2秒の安定化待機 (Requirements: 6.3)
+    await page.waitForTimeout(2000);
+
+    let axeBuilder = new AxeBuilder({ page })
       .withTags(WCAG_TAGS)
+      .setLegacyMode(true) // クロスオリジンiframeのペナルティを回避 (Requirements: 6.4)
       .exclude('iframe') // 外部iframeを除外
-      .exclude('[data-third-party]') // サードパーティ属性を持つ要素を除外
-      .analyze();
+      .exclude('[data-third-party]'); // サードパーティ属性を持つ要素を除外
+
+    // 広告要素を除外 (Requirements: 6.4)
+    axeBuilder = applyAdExclusions(axeBuilder);
+
+    const accessibilityScanResults = await axeBuilder.analyze();
 
     // 違反がある場合は詳細を出力
     if (accessibilityScanResults.violations.length > 0) {

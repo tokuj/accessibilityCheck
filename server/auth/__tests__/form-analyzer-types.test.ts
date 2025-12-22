@@ -4,6 +4,7 @@
  * TDDアプローチ: まずテストを作成し、型定義が正しく動作することを確認
  */
 
+import { describe, it, expect } from 'vitest';
 import type {
   FormFieldCandidate,
   FormAnalysisResult,

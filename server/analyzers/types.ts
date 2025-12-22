@@ -64,6 +64,7 @@ export interface AISummary {
   specificRecommendations: string[];   // 具体的な推奨事項
   impactSummary: ImpactSummary;        // 影響度別の問題数
   generatedAt: string;                 // 生成日時
+  isFallback?: boolean;                // フォールバック生成の場合true
 }
 
 // Complete accessibility report

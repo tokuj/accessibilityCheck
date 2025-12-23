@@ -774,7 +774,8 @@ describe('GeminiService', () => {
 
       const result = await resultPromise;
 
-      expect(mockFetch).toHaveBeenCalledTimes(2);
+      // MAX_RETRIES=3 なので、初回 + 3回リトライ = 4回
+      expect(mockFetch).toHaveBeenCalledTimes(4);
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error.type).toBe('timeout');
@@ -1698,8 +1699,8 @@ describe('GeminiService', () => {
           expect(result.error.type).toBe('timeout');
         }
 
-        // 検証: 2回試行されたこと
-        expect(mockFetch).toHaveBeenCalledTimes(2);
+        // 検証: MAX_RETRIES=3 なので、初回 + 3回リトライ = 4回試行
+        expect(mockFetch).toHaveBeenCalledTimes(4);
 
         // 検証: エラーログが出力されていること
         expect(consoleErrorSpy).toHaveBeenCalledWith(

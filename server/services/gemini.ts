@@ -22,7 +22,7 @@ const MAX_DETECTED_ISSUES = 30;
 
 // リトライ設定
 const RETRY_DELAY_MS = 1000;  // 1秒
-const MAX_RETRIES = 1;        // 1回
+const MAX_RETRIES = 3;        // 3回
 
 // Gemini APIのエンドポイント
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
@@ -294,7 +294,7 @@ export const GeminiService = {
    */
   async generateAISummary(
     violations: RuleResult[],
-    scores: LighthouseScores
+    scores?: LighthouseScores
   ): Promise<Result<AISummary, GeminiError>> {
     // 1. APIキーを取得
     const secretResult = await SecretManagerService.getSecret('google_api_key_toku');
@@ -366,8 +366,10 @@ export const GeminiService = {
 
 /**
  * AI総評生成用のプロンプトを構築
+ * @param violations - 検出された違反情報（axe-core, pa11y, lighthouseの全ツールからのデータ）
+ * @param scores - Lighthouseスコア（オプショナル、現在プロンプトでは未使用）
  */
-function buildPrompt(violations: RuleResult[], scores: LighthouseScores): string {
+function buildPrompt(violations: RuleResult[], scores?: LighthouseScores): string {
   // 影響度別に違反を集計
   const impactSummary = countByImpact(violations);
 

@@ -97,6 +97,15 @@ vi.mock('../services/gemini', () => ({
       error: { message: 'Skipped in test' },
     }),
   },
+  generateFallbackSummary: vi.fn().mockReturnValue({
+    overallAssessment: 'テスト用フォールバック総評',
+    detectedIssues: [],
+    prioritizedImprovements: [],
+    specificRecommendations: [],
+    impactSummary: { critical: 0, serious: 0, moderate: 0, minor: 0 },
+    generatedAt: new Date().toISOString(),
+    isFallback: true,
+  }),
 }));
 
 describe('analyzer.ts 統合テスト', () => {

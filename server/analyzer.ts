@@ -5,7 +5,7 @@ import { analyzeWithPa11y, PA11Y_VERSION } from './analyzers/pa11y';
 import { analyzeWithLighthouse, LIGHTHOUSE_VERSION } from './analyzers/lighthouse';
 import { AuthManager } from './auth/manager';
 import type { AuthConfig, StorageState } from './auth/types';
-import { GeminiService } from './services/gemini';
+import { GeminiService, generateFallbackSummary } from './services/gemini';
 import type { ProgressCallback, SSEEvent } from './analyzers/sse-types';
 import { getTimeoutConfig } from './config';
 import { setupAdBlocking, formatTimeoutError } from './utils';
@@ -334,24 +334,25 @@ export async function analyzeUrl(
   const totalDuration = toolsUsed.reduce((sum, t) => sum + t.duration, 0);
   emitLog(`  合計実行時間: ${(totalDuration / 1000).toFixed(1)}秒`, onProgress);
 
-  // 4. AI総評生成（Gemini成功時のみ表示、フォールバックなし）
+  // 4. AI総評生成（Lighthouse失敗時もaxe-core/pa11yデータで生成）
   let aiSummary: AISummary | undefined;
-  if (lighthouseScores) {
-    emitProgress(4, 4, 'ai-summary', onProgress);
-    emitLog('  [4/4] AI総評生成開始...', onProgress);
-    try {
-      const aiResult = await GeminiService.generateAISummary(allViolations, lighthouseScores);
-      if (aiResult.success) {
-        aiSummary = aiResult.value;
-        emitLog('  [4/4] AI総評生成完了', onProgress);
-      } else {
-        emitLog(`  [4/4] AI総評生成失敗: ${aiResult.error.message}`, onProgress);
-        // フォールバックなし - aiSummaryはundefinedのまま
-      }
-    } catch (error) {
-      emitLog(`  [4/4] AI総評生成エラー: ${error}`, onProgress);
-      // フォールバックなし - aiSummaryはundefinedのまま
+  emitProgress(4, 4, 'ai-summary', onProgress);
+  emitLog('  [4/4] AI総評生成開始...', onProgress);
+  try {
+    // lighthouseScores はオプショナル（undefined可）
+    const aiResult = await GeminiService.generateAISummary(allViolations, lighthouseScores);
+    if (aiResult.success) {
+      aiSummary = aiResult.value;
+      emitLog('  [4/4] AI総評生成完了', onProgress);
+    } else {
+      emitLog(`  [4/4] AI総評生成失敗: ${aiResult.error.message}`, onProgress);
+      aiSummary = generateFallbackSummary(allViolations);
+      emitLog('  [4/4] フォールバック総評を使用', onProgress);
     }
+  } catch (error) {
+    emitLog(`  [4/4] AI総評生成エラー: ${error}`, onProgress);
+    aiSummary = generateFallbackSummary(allViolations);
+    emitLog('  [4/4] フォールバック総評を使用', onProgress);
   }
 
   return {

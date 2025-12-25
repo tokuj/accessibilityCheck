@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -7,9 +7,13 @@ import Button from '@mui/material/Button';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Chip from '@mui/material/Chip';
+import CircularProgress from '@mui/material/CircularProgress';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import LinkIcon from '@mui/icons-material/Link';
 import BuildIcon from '@mui/icons-material/Build';
 import DownloadIcon from '@mui/icons-material/Download';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { ScoreCard } from './ScoreCard';
 import { ImprovementList } from './ImprovementList';
 import { ViolationsTable } from './ViolationsTable';
@@ -20,6 +24,7 @@ import { PageTabs } from './PageTabs';
 import type { AccessibilityReport, RuleResult } from '../types/accessibility';
 import { calculateScores, calculatePageScores } from '../utils/scoreCalculator';
 import { exportAllResultsToCsv, type ResultWithPage } from '../utils/csvExport';
+import { exportReportToPdf, generatePdfFileName } from '../utils/pdfExport';
 
 interface ReportSummaryProps {
   report: AccessibilityReport;
@@ -52,6 +57,25 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   const [tabValue, setTabValue] = useState(0);
   // アクティブなページインデックス（複数ページタブ用、Task 9.1）
   const [activePageIndex, setActivePageIndex] = useState(0);
+
+  // PDF生成用のref（Task 5.1）
+  const pdfTargetRef = useRef<HTMLDivElement>(null);
+
+  // PDF生成状態（Task 5.3）
+  const [isPdfGenerating, setIsPdfGenerating] = useState(false);
+
+  // Snackbar状態（Task 5.4）
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+    showRetry: boolean;
+  }>({
+    open: false,
+    message: '',
+    severity: 'success',
+    showRetry: false,
+  });
 
   // 複数ページかどうかを判定
   const isMultiPage = report.pages.length > 1;
@@ -166,6 +190,51 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
     exportAllResultsToCsv(allResults, url);
   };
 
+  // PDF出力ハンドラ（Task 5.2）
+  const handleDownloadPdf = async () => {
+    if (isPdfGenerating || !pdfTargetRef.current) {
+      return;
+    }
+
+    setIsPdfGenerating(true);
+    setSnackbar({ open: false, message: '', severity: 'success', showRetry: false });
+
+    try {
+      const filename = generatePdfFileName(url);
+      const result = await exportReportToPdf(pdfTargetRef.current, { filename });
+
+      if (result.success) {
+        setSnackbar({
+          open: true,
+          message: 'PDFファイルのダウンロードを開始しました',
+          severity: 'success',
+          showRetry: false,
+        });
+      } else {
+        setSnackbar({
+          open: true,
+          message: result.error || 'PDF生成中にエラーが発生しました',
+          severity: 'error',
+          showRetry: true,
+        });
+      }
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: error instanceof Error ? error.message : 'PDF生成中にエラーが発生しました',
+        severity: 'error',
+        showRetry: true,
+      });
+    } finally {
+      setIsPdfGenerating(false);
+    }
+  };
+
+  // Snackbarを閉じる
+  const handleCloseSnackbar = () => {
+    setSnackbar((prev) => ({ ...prev, open: false }));
+  };
+
   return (
     <Card sx={{ maxWidth: 1400, mx: 'auto', mb: 4 }}>
       <CardContent sx={{ p: 4 }}>
@@ -181,7 +250,7 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         )}
 
         {/* Header with URL and close button */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Box data-testid="report-header" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Box
             sx={{
               display: 'flex',
@@ -207,26 +276,40 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
               {displayUrl}
             </Typography>
           </Box>
-          <Button
-            variant="text"
-            color="primary"
-            onClick={onClose}
-            sx={{ fontWeight: 500 }}
-          >
-            閉じる
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              size="small"
+              aria-label="PDFダウンロード"
+              startIcon={isPdfGenerating ? <CircularProgress size={16} /> : <PictureAsPdfIcon />}
+              onClick={handleDownloadPdf}
+              disabled={isPdfGenerating}
+            >
+              PDFダウンロード
+            </Button>
+            <Button
+              variant="text"
+              color="primary"
+              onClick={onClose}
+              sx={{ fontWeight: 500 }}
+            >
+              閉じる
+            </Button>
+          </Box>
         </Box>
 
-        {/* Screenshot */}
-        {currentScreenshot && (
-          <Box sx={{ mb: 3, borderRadius: 2, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
-            <img
-              src={currentScreenshot}
-              alt="ページスクリーンショット"
-              style={{ width: '100%', display: 'block' }}
-            />
-          </Box>
-        )}
+        {/* PDF対象領域（Task 5.1） */}
+        <Box data-testid="pdf-target-area" ref={pdfTargetRef}>
+          {/* Screenshot */}
+          {currentScreenshot && (
+            <Box sx={{ mb: 3, borderRadius: 2, overflow: 'hidden', border: '1px solid', borderColor: 'divider' }}>
+              <img
+                src={currentScreenshot}
+                alt="ページスクリーンショット"
+                style={{ width: '100%', display: 'block' }}
+              />
+            </Box>
+          )}
 
         {/* Tools Used */}
         {report.toolsUsed && report.toolsUsed.length > 0 && (
@@ -279,6 +362,7 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         <ImprovementList
           violations={isMultiPage ? activePage.violations : allViolations}
           aiSummary={isMultiPage ? activePage.aiSummary : report.aiSummary}
+          targetUrl={currentUrl}
         />
 
         {/* Divider */}
@@ -331,6 +415,29 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         <TabPanel value={tabValue} index={2}>
           <IncompleteTable pages={isMultiPage ? [activePage] : report.pages} />
         </TabPanel>
+        </Box>
+        {/* Snackbar for notifications (Task 5.4) */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={snackbar.severity === 'success' ? 3000 : 6000}
+          onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert
+            onClose={handleCloseSnackbar}
+            severity={snackbar.severity}
+            variant="filled"
+            action={
+              snackbar.showRetry ? (
+                <Button color="inherit" size="small" onClick={handleDownloadPdf}>
+                  再試行
+                </Button>
+              ) : undefined
+            }
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
       </CardContent>
     </Card>
   );

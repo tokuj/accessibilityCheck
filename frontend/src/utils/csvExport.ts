@@ -1,4 +1,4 @@
-import type { ToolSource, Impact } from '../types/accessibility';
+import type { ToolSource, Impact, DetectedIssue } from '../types/accessibility';
 
 /**
  * 結果種別
@@ -51,6 +51,29 @@ export function escapeForCsv(field: string): string {
   }
 
   return field;
+}
+
+/**
+ * ダウンロードをトリガーし、Safari/iOS互換性のためにBlob URLを遅延解放
+ * Safari/iOSではダウンロードが完了する前にURLが解放されると問題が発生するため、
+ * 1秒後に解放する
+ */
+function triggerDownloadWithDelayedRevoke(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.style.display = 'none';
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  // Safari/iOS対応: ダウンロード完了を待つため遅延解放
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 1000);
 }
 
 /**
@@ -111,18 +134,7 @@ export function generateCsvContent(violations: ViolationWithPage[]): string {
 export function exportViolationsToCsv(violations: ViolationWithPage[], targetUrl: string): void {
   const content = generateCsvContent(violations);
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = generateFileName(targetUrl);
-  link.style.display = 'none';
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-
-  URL.revokeObjectURL(url);
+  triggerDownloadWithDelayedRevoke(blob, generateFileName(targetUrl));
 }
 
 /**
@@ -163,16 +175,61 @@ export function generateAllResultsCsvContent(results: ResultWithPage[]): string 
 export function exportAllResultsToCsv(results: ResultWithPage[], targetUrl: string): void {
   const content = generateAllResultsCsvContent(results);
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
+  triggerDownloadWithDelayedRevoke(blob, generateFileName(targetUrl));
+}
 
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = generateFileName(targetUrl);
-  link.style.display = 'none';
+/**
+ * AI総評CSVコンテンツを生成
+ * UTF-8 BOM付きで返す
+ */
+export function generateAISummaryCsvContent(issues: DetectedIssue[]): string {
+  const BOM = '\uFEFF';
+  const headers = ['問題番号', '何が起きているか', '修正に必要なもの', 'どう修正するか'];
+  const headerRow = headers.join(',');
 
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  if (issues.length === 0) {
+    return BOM + headerRow;
+  }
 
-  URL.revokeObjectURL(url);
+  const dataRows = issues.map((issue, index) => {
+    const fields = [
+      String(index + 1),
+      escapeForCsv(issue.whatIsHappening || ''),
+      escapeForCsv(issue.whatIsNeeded || ''),
+      escapeForCsv(issue.howToFix || ''),
+    ];
+    return fields.join(',');
+  });
+
+  return BOM + headerRow + '\n' + dataRows.join('\n');
+}
+
+/**
+ * AI総評CSV用のファイル名を生成
+ * 形式: ai-summary_{domain}_{YYYY-MM-DD}.csv
+ */
+export function generateAISummaryFileName(targetUrl: string, date: Date = new Date()): string {
+  let domain: string;
+  try {
+    const url = new URL(targetUrl);
+    domain = url.host.replace(/[.:]/g, '-');
+  } catch {
+    domain = 'unknown';
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const dateStr = `${year}-${month}-${day}`;
+
+  return `ai-summary_${domain}_${dateStr}.csv`;
+}
+
+/**
+ * AI総評をCSVファイルとしてダウンロード
+ */
+export function exportAISummaryToCsv(issues: DetectedIssue[], targetUrl: string): void {
+  const content = generateAISummaryCsvContent(issues);
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  triggerDownloadWithDelayedRevoke(blob, generateAISummaryFileName(targetUrl));
 }

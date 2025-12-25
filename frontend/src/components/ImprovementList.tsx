@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
+import Button from '@mui/material/Button';
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import LightbulbIcon from '@mui/icons-material/Lightbulb';
@@ -8,12 +12,15 @@ import PriorityHighIcon from '@mui/icons-material/PriorityHigh';
 import BuildIcon from '@mui/icons-material/Build';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
+import DownloadIcon from '@mui/icons-material/Download';
 import type { RuleResult, AISummary } from '../types/accessibility';
 import { sortViolationsByImpact } from '../utils/scoreCalculator';
+import { exportAISummaryToCsv } from '../utils/csvExport';
 
 interface ImprovementListProps {
   violations: RuleResult[];
   aiSummary?: AISummary;
+  targetUrl?: string;
 }
 
 const impactLabels: Record<string, string> = {
@@ -30,9 +37,49 @@ const impactColors: Record<string, { bg: string; text: string }> = {
   minor: { bg: 'grey.200', text: 'text.secondary' },
 };
 
-export function ImprovementList({ violations, aiSummary }: ImprovementListProps) {
+export function ImprovementList({ violations, aiSummary, targetUrl = '' }: ImprovementListProps) {
   const sortedViolations = sortViolationsByImpact(violations);
   const topViolations = sortedViolations.slice(0, 5);
+
+  // Snackbar状態（Task 6.1）
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  });
+
+  // AI総評CSVダウンロードが可能かどうか
+  const canDownloadCsv = aiSummary && aiSummary.detectedIssues && aiSummary.detectedIssues.length > 0;
+
+  // CSVダウンロードハンドラ
+  const handleDownloadCsv = () => {
+    if (canDownloadCsv) {
+      try {
+        exportAISummaryToCsv(aiSummary.detectedIssues, targetUrl);
+        setSnackbar({
+          open: true,
+          message: 'CSVファイルのダウンロードを開始しました',
+          severity: 'success',
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'CSVダウンロード中にエラーが発生しました';
+        setSnackbar({
+          open: true,
+          message: errorMessage,
+          severity: 'error',
+        });
+      }
+    }
+  };
+
+  // Snackbarを閉じる
+  const handleCloseSnackbar = () => {
+    setSnackbar((prev) => ({ ...prev, open: false }));
+  };
 
   return (
     <Box>
@@ -48,7 +95,7 @@ export function ImprovementList({ violations, aiSummary }: ImprovementListProps)
             borderColor: 'primary.200',
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Box data-testid="ai-summary-header" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22 }} />
             <Typography variant="subtitle1" fontWeight="bold">
               AI総評
@@ -60,6 +107,17 @@ export function ImprovementList({ violations, aiSummary }: ImprovementListProps)
               variant="outlined"
               sx={{ ml: 1, fontSize: '0.7rem', height: 20 }}
             />
+            <Box sx={{ flexGrow: 1 }} />
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<DownloadIcon />}
+              onClick={handleDownloadCsv}
+              disabled={!canDownloadCsv}
+              sx={{ fontSize: '0.75rem' }}
+            >
+              CSVダウンロード
+            </Button>
           </Box>
 
           {/* 全体評価 */}
@@ -301,6 +359,21 @@ export function ImprovementList({ violations, aiSummary }: ImprovementListProps)
           )}
         </Box>
       )}
+      {/* Snackbar for CSV download notifications (Task 6.1) */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={snackbar.severity === 'success' ? 3000 : 6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleCloseSnackbar}
+          severity={snackbar.severity}
+          variant="filled"
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

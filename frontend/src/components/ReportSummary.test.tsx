@@ -1,7 +1,17 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ReportSummary } from './ReportSummary';
 import type { AccessibilityReport } from '../types/accessibility';
+import * as pdfExport from '../utils/pdfExport';
+
+// PDF関連のモック
+vi.mock('../utils/pdfExport', () => ({
+  exportReportToPdf: vi.fn(),
+  generatePdfFileName: vi.fn(() => 'a11y-report_example-com_2025-12-23.pdf'),
+}));
+
+const mockExportReportToPdf = vi.mocked(pdfExport.exportReportToPdf);
+const mockGeneratePdfFileName = vi.mocked(pdfExport.generatePdfFileName);
 
 // Mock子コンポーネント
 vi.mock('./ScoreCard', () => ({
@@ -110,6 +120,10 @@ const createMultiPageMockReport = (): AccessibilityReport => ({
 });
 
 describe('ReportSummary', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExportReportToPdf.mockResolvedValue({ success: true });
+  });
   describe('タスク1.1: レポートコンテナの横幅拡張', () => {
     it('Cardコンポーネントの最大幅が1400pxであること', () => {
       const report = createMockReport();
@@ -335,6 +349,250 @@ describe('ReportSummary', () => {
 
         // レポート全体のサマリー数が表示される
         expect(screen.getByRole('tab', { name: /違反 \(5\)/ })).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Task 5: UI統合 - レポートPDFダウンロードボタン', () => {
+    describe('Task 5.1: PDF対象領域のref設定', () => {
+      it('CardContentにdata-testid="pdf-target-area"が設定されていること', () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfTarget = screen.getByTestId('pdf-target-area');
+        expect(pdfTarget).toBeInTheDocument();
+      });
+
+      it('PDF対象領域がCardContent内に存在すること', () => {
+        const report = createMockReport();
+        const { container } = render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const cardContent = container.querySelector('.MuiCardContent-root');
+        const pdfTarget = screen.getByTestId('pdf-target-area');
+        expect(cardContent).toContainElement(pdfTarget);
+      });
+    });
+
+    describe('Task 5.2: PDFダウンロードボタンの追加', () => {
+      it('PDFダウンロードボタンがヘッダーに表示されること', () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        expect(pdfButton).toBeInTheDocument();
+      });
+
+      it('PDFダウンロードボタンが閉じるボタンの左隣に配置されること', () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        const closeButton = screen.getByRole('button', { name: '閉じる' });
+
+        // 両方が同じヘッダーコンテナ内に存在することを確認
+        const headerContainer = pdfButton.closest('[data-testid="report-header"]');
+        expect(headerContainer).toContainElement(closeButton);
+      });
+
+      it('PDFダウンロードボタンにPictureAsPdfIconが含まれること', () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        // MUIのPictureAsPdfIconはsvg要素として描画される
+        const icon = pdfButton.querySelector('svg');
+        expect(icon).toBeInTheDocument();
+      });
+
+      it('ボタンスタイルが統一されていること（outlined, small）', () => {
+        const report = createMockReport();
+        const { container } = render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = container.querySelector('button[aria-label="PDFダウンロード"]');
+        expect(pdfButton).toHaveClass('MuiButton-outlined');
+        expect(pdfButton).toHaveClass('MuiButton-sizeSmall');
+      });
+
+      it('PDFダウンロードボタンクリックでPDF生成が開始されること', async () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(mockExportReportToPdf).toHaveBeenCalledTimes(1);
+        });
+      });
+
+      it('PDF生成時に正しいファイル名が生成されること', async () => {
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(mockGeneratePdfFileName).toHaveBeenCalledWith('https://example.com');
+        });
+      });
+    });
+
+    describe('Task 5.3: PDF生成中の進捗インジケーター', () => {
+      it('PDF生成中にローディングインジケーターが表示されること', async () => {
+        // PDF生成に時間がかかるケースをシミュレート
+        let resolvePromise: (value: { success: boolean }) => void;
+        const promise = new Promise<{ success: boolean }>((resolve) => {
+          resolvePromise = resolve;
+        });
+        mockExportReportToPdf.mockReturnValue(promise);
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        // ローディングインジケーターが表示されることを確認
+        await waitFor(() => {
+          expect(screen.getByRole('progressbar')).toBeInTheDocument();
+        });
+
+        // Promise を解決して cleanup
+        resolvePromise!({ success: true });
+
+        await waitFor(() => {
+          expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+        });
+      });
+
+      it('PDF生成中はボタンが非活性化されること', async () => {
+        let resolvePromise: (value: { success: boolean }) => void;
+        const promise = new Promise<{ success: boolean }>((resolve) => {
+          resolvePromise = resolve;
+        });
+        mockExportReportToPdf.mockReturnValue(promise);
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(pdfButton).toBeDisabled();
+        });
+
+        resolvePromise!({ success: true });
+
+        await waitFor(() => {
+          expect(pdfButton).not.toBeDisabled();
+        });
+      });
+    });
+
+    describe('Task 5.4: エラーハンドリングと再試行機能', () => {
+      it('PDF生成失敗時にSnackbarでエラーメッセージが表示されること', async () => {
+        mockExportReportToPdf.mockResolvedValue({
+          success: false,
+          error: 'PDF生成中にエラーが発生しました',
+        });
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeInTheDocument();
+          expect(screen.getByText(/PDF生成中にエラーが発生しました/)).toBeInTheDocument();
+        });
+      });
+
+      it('PDF生成成功時にSnackbarで成功メッセージが表示されること', async () => {
+        mockExportReportToPdf.mockResolvedValue({ success: true });
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert')).toBeInTheDocument();
+          expect(screen.getByText(/PDFファイルのダウンロードを開始しました/)).toBeInTheDocument();
+        });
+      });
+
+      it('エラー時に再試行ボタンが表示されること', async () => {
+        mockExportReportToPdf.mockResolvedValue({
+          success: false,
+          error: 'PDF生成中にエラーが発生しました',
+        });
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument();
+        });
+      });
+
+      it('再試行ボタンクリックでPDF生成が再実行されること', async () => {
+        mockExportReportToPdf.mockResolvedValueOnce({
+          success: false,
+          error: 'PDF生成中にエラーが発生しました',
+        });
+        mockExportReportToPdf.mockResolvedValueOnce({ success: true });
+
+        const report = createMockReport();
+        render(
+          <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+        );
+
+        const pdfButton = screen.getByRole('button', { name: /PDF.*ダウンロード/i });
+        fireEvent.click(pdfButton);
+
+        await waitFor(() => {
+          expect(screen.getByRole('button', { name: '再試行' })).toBeInTheDocument();
+        });
+
+        const retryButton = screen.getByRole('button', { name: '再試行' });
+        fireEvent.click(retryButton);
+
+        await waitFor(() => {
+          expect(mockExportReportToPdf).toHaveBeenCalledTimes(2);
+        });
       });
     });
   });

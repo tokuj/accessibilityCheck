@@ -140,30 +140,46 @@ AIの回答精度を高め、誤情報（ハルシネーション）を防ぐた
 5. The API shall 既存のGeminiService（server/services/gemini.ts）を再利用する
 6. The APIリクエスト shall 既存の認証・セッション管理と統合する（認証が必要な場合）
 
-### Requirement 8: Spindle参照データ管理（ハルシネーション防止）
+### Requirement 8: Web検索ベース情報取得（ハルシネーション防止）
 
-**Objective:** As a システム, I want WCAG基準・ルールIDとSpindleガイドラインのマッピングデータを保持する, so that AIが根拠のある回答を生成できハルシネーションを防止できる
-
-#### Acceptance Criteria
-
-1. The バックエンドシステム shall WCAG基準（例：1.4.3, 1.1.1）とSpindleガイドラインURLのマッピングデータを保持する
-2. The バックエンドシステム shall axe-core/pa11y/lighthouseのルールID（例：color-contrast, image-alt）とSpindleガイドラインURLのマッピングデータを保持する
-3. The マッピングデータ shall JSONファイルまたはTypeScriptオブジェクトとして管理する
-4. When 質問対象のルールIDまたはWCAG基準に対応するSpindleページが存在する場合, the システム shall そのURLをプロンプトに含める
-5. When 対応するSpindleページが存在しない場合, the システム shall Spindleトップページ（https://a11y-guidelines.ameba.design/）を参照元として使用する
-6. The AI回答 shall 参照したSpindleページへのリンクを含める
-
-### Requirement 9: プロンプトエンジニアリング
-
-**Objective:** As a システム, I want コンテキストに応じた適切なプロンプトが生成される, so that AIが的確で有用な回答を生成できる
+**Objective:** As a システム, I want WCAG基準・ルールIDに関する情報をWeb検索で取得する, so that AIが根拠のある回答を生成できハルシネーションを防止できる
 
 #### Acceptance Criteria
 
-1. The プロンプトビルダー shall 項目タイプ（スコア、違反、推奨事項など）に応じたプロンプトテンプレートを使用する
-2. The プロンプト shall 回答を日本語で、300文字以内で簡潔に生成するよう指示する
-3. The プロンプト shall アクセシビリティの専門家としてのペルソナを設定する
-4. The プロンプト shall 「以下のSpindleガイドラインを参照元として回答してください」という指示とURLを含める
-5. The プロンプト shall 「参照元に記載のない情報は推測せず、『詳細はガイドラインをご確認ください』と案内してください」という指示を含める
-6. Where 違反項目への質問の場合, the プロンプト shall 該当ルールのSpindle解説ページURL、WCAG基準、具体的な修正例を含めるよう指示する
-7. Where スコア項目への質問の場合, the プロンプト shall スコアの算出根拠と改善アドバイスを含めるよう指示する
-8. Where WCAG基準への質問の場合, the プロンプト shall 該当WCAG基準のSpindle解説ページURLと達成基準の説明を含めるよう指示する
+1. The バックエンドシステム shall Gemini groundingを使用してWCAG基準・ルールIDに関連する情報をWeb検索で取得する
+2. The 検索結果 shall 信頼性の高いソース（W3C、MDN、デジタル庁ガイドラインなど）を優先する
+3. The AI回答 shall 検索で取得した参照URLを含める
+4. When 検索結果が得られない場合, the システム shall 「詳細はWCAGガイドラインをご確認ください」と案内する
+5. The システム shall 存在しないURLを生成しない
+
+### Requirement 9: プロンプトエンジニアリング（認知設計）
+
+**Objective:** As a システム, I want コンテキストに応じた認知設計ベースのプロンプトが生成される, so that AIが的確で有用な回答を生成できる
+
+#### Acceptance Criteria
+
+1. The プロンプトビルダー shall 5要素（前提、状況、目的、動機、制約）を明示的に含める
+2. The プロンプト shall 「あなたは専門家です」型のロールプレイを使用しない
+3. The プロンプト shall 与えられた情報（WCAG項番、ツールからのメッセージなど）のみを使用する
+4. The プロンプト shall 情報が不足している場合に推測せず、Web検索を要求する
+5. The プロンプト shall 回答を日本語で簡潔に生成するよう指示する
+
+### Requirement 10: 初期メッセージ（ユーザーインパクト提示）
+
+**Objective:** As a 開発者/QAエンジニア, I want チャットを開いた瞬間に「このアクセシビリティを満たさないとユーザーがどう困るのか」が表示される, so that アクセシビリティの重要性を理解できる
+
+#### Acceptance Criteria
+
+1. When チャットポップオーバーを開いた場合, the システム shall 該当項目のユーザーインパクト説明を自動表示する
+2. The ユーザーインパクト説明 shall 具体的な困りごと（例：視覚障害者がコンテンツを認識できない）を含む
+3. The ユーザーインパクト説明 shall 「質問を入力してください」の代わりに表示される
+4. The ユーザーインパクト説明 shall AIが生成する（初回のみ）
+
+### Requirement 11: 日本語入力（IME）対応
+
+**Objective:** As a 日本語ユーザー, I want IME変換中にEnterキーを押しても送信されない, so that 正しく日本語入力できる
+
+#### Acceptance Criteria
+
+1. When IME変換中（isComposing=true）にEnterキーが押された場合, the システム shall 送信せずに変換を確定する
+2. When IME変換が完了した後にEnterキーが押された場合, the システム shall メッセージを送信する

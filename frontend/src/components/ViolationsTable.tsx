@@ -10,7 +10,9 @@ import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { ImpactBadge } from './ImpactBadge';
+import { AIChatButton } from './AIChatButton';
 import type { PageResult } from '../types/accessibility';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface ViolationsTableProps {
   pages: PageResult[];
@@ -52,6 +54,7 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
             <TableCell>ノード数</TableCell>
             <TableCell>WCAG項番</TableCell>
             <TableCell>詳細</TableCell>
+            <TableCell>AI</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -80,13 +83,23 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
               <TableCell>
                 <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                   {violation.wcagCriteria.map((criteria) => (
-                    <Chip
-                      key={criteria}
-                      label={criteria}
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                    />
+                    <Box key={criteria} sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                      <Chip
+                        label={criteria}
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                      />
+                      <AIChatButton
+                        context={{
+                          type: 'wcag',
+                          wcagCriteria: [criteria],
+                          data: { criterion: criteria },
+                          label: `WCAG ${criteria}`,
+                        } as ChatContext}
+                        size="small"
+                      />
+                    </Box>
                   ))}
                 </Box>
               </TableCell>
@@ -94,6 +107,24 @@ export function ViolationsTable({ pages }: ViolationsTableProps) {
                 <Link href={violation.helpUrl} target="_blank" rel="noopener">
                   参照
                 </Link>
+              </TableCell>
+              <TableCell>
+                <AIChatButton
+                  context={{
+                    type: 'violation',
+                    ruleId: violation.id,
+                    wcagCriteria: violation.wcagCriteria,
+                    data: {
+                      ruleId: violation.id,
+                      description: violation.description,
+                      impact: violation.impact,
+                      nodeCount: violation.nodeCount,
+                      toolSource: violation.toolSource,
+                    },
+                    label: violation.id,
+                  } as ChatContext}
+                  size="small"
+                />
               </TableCell>
             </TableRow>
           ))}

@@ -286,9 +286,239 @@ async function callGeminiAPI(
 }
 
 /**
- * Gemini APIを使用したAI総評生成サービス
+ * 参照リンクの型定義（Grounding対応：ドメイン情報を含む）
  */
+export interface ReferenceLink {
+  uri: string;
+  domain?: string;
+  title?: string;
+}
+
+/**
+ * チャットレスポンスの型定義（Grounding対応）
+ */
+export interface ChatResponseValue {
+  answer: string;
+  referenceUrls: string[];  // 後方互換性のため維持
+  referenceLinks: ReferenceLink[];  // 新しい形式（ドメイン情報を含む）
+}
+
+/**
+ * チャット用のGemini API呼び出しを実行する（Grounding対応）
+ * @param apiKey - Gemini APIキー
+ * @param systemPrompt - システムプロンプト
+ * @param userPrompt - ユーザープロンプト
+ * @returns API呼び出し結果（answerとreferenceUrls）
+ */
+async function callGeminiChatAPI(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string
+): Promise<Result<ChatResponseValue, GeminiError>> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(
+      `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemPrompt}\n\n質問: ${userPrompt}` }],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 512,
+          },
+          tools: [{ google_search: {} }],
+        }),
+        signal: controller.signal,
+      }
+    );
+
+    clearTimeout(timeoutId);
+
+    // レート制限チェック
+    if (response.status === 429) {
+      const retryAfter = parseInt(response.headers.get('Retry-After') || '60', 10);
+      return {
+        success: false,
+        error: {
+          type: 'rate_limit',
+          message: 'レート制限に達しました',
+          retryAfter,
+        },
+      };
+    }
+
+    // その他のエラー
+    if (!response.ok) {
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `Gemini API エラー: ${response.statusText}`,
+          statusCode: response.status,
+        },
+      };
+    }
+
+    // レスポンスをパース（Grounding対応）
+    const data = await response.json();
+    const candidate = (data as {
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string }>;
+        };
+        groundingMetadata?: {
+          groundingChunks?: Array<{
+            web?: { uri?: string; title?: string; domain?: string };
+          }>;
+        };
+      }>;
+    }).candidates?.[0];
+
+    const text = candidate?.content?.parts?.[0]?.text;
+
+    if (!text) {
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: 'Gemini APIからの応答にテキストがありません',
+          statusCode: 0,
+        },
+      };
+    }
+
+    // groundingChunksから参照URL情報を抽出
+    const groundingChunks = candidate?.groundingMetadata?.groundingChunks || [];
+    const referenceLinks: ReferenceLink[] = groundingChunks
+      .filter((chunk) => chunk.web?.uri)
+      .map((chunk) => ({
+        uri: chunk.web!.uri!,
+        domain: chunk.web!.domain,
+        title: chunk.web!.title,
+      }));
+
+    // 後方互換性のためreferenceUrlsも維持
+    const referenceUrls: string[] = referenceLinks.map((link) => link.uri);
+
+    return {
+      success: true,
+      value: {
+        answer: text,
+        referenceUrls,
+        referenceLinks,
+      },
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+
+    // タイムアウト
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: {
+          type: 'timeout',
+          message: 'Gemini APIへのリクエストがタイムアウトしました',
+        },
+      };
+    }
+
+    // その他のエラー（ネットワークエラーなど）
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      error: {
+        type: 'api_error',
+        message: `Gemini API呼び出し中にエラーが発生しました: ${message}`,
+        statusCode: 0,
+      },
+    };
+  }
+}
+
 export const GeminiService = {
+  /**
+   * インラインAI対話用：システムプロンプトとユーザープロンプトから回答を生成する（Grounding対応）
+   * @returns 成功時はanswerとreferenceUrlsを含むオブジェクト
+   */
+  async generateChatResponse(
+    systemPrompt: string,
+    userPrompt: string
+  ): Promise<Result<ChatResponseValue, GeminiError>> {
+    // 1. APIキーを取得
+    const secretResult = await SecretManagerService.getSecret('google_api_key_toku');
+    if (!secretResult.success) {
+      console.error('Gemini: APIキー取得失敗');
+      return {
+        success: false,
+        error: {
+          type: 'api_error',
+          message: `APIキー取得に失敗しました: ${secretResult.error.message}`,
+          statusCode: 0,
+        },
+      };
+    }
+
+    const apiKey = secretResult.value;
+
+    // 2. Gemini APIを呼び出し（リトライ付き）
+    let lastError: GeminiError | null = null;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      // リトライの場合は待機
+      if (attempt > 0 && lastError) {
+        console.info('Gemini: リトライを実行します', {
+          attempt,
+          delay: RETRY_DELAY_MS,
+          previousError: lastError.type,
+        });
+        await sleep(RETRY_DELAY_MS);
+      }
+
+      const result = await callGeminiChatAPI(apiKey, systemPrompt, userPrompt);
+
+      if (result.success) {
+        console.log('Gemini: チャット応答生成完了');
+        return result;
+      }
+
+      // エラーの場合
+      lastError = result.error;
+
+      // リトライ対象外のエラーはすぐに返却
+      if (!isRetryableError(result.error)) {
+        console.error('Gemini: API呼び出しエラー:', result.error.message);
+        return result;
+      }
+
+      // リトライ回数を超えた場合
+      if (attempt === MAX_RETRIES) {
+        console.error('Gemini: リトライ上限に達しました:', result.error.message);
+        return result;
+      }
+    }
+
+    // ここには到達しないはずだが、型安全のため
+    return {
+      success: false,
+      error: lastError || {
+        type: 'api_error',
+        message: '予期しないエラーが発生しました',
+        statusCode: 0,
+      },
+    };
+  },
+
   /**
    * 違反情報とスコアからAI総評を生成する
    */

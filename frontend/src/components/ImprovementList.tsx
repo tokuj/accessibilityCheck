@@ -16,6 +16,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import type { RuleResult, AISummary } from '../types/accessibility';
 import { sortViolationsByImpact } from '../utils/scoreCalculator';
 import { exportAISummaryToCsv } from '../utils/csvExport';
+import { AIChatButton } from './AIChatButton';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface ImprovementListProps {
   violations: RuleResult[];
@@ -121,9 +123,19 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
           </Box>
 
           {/* 全体評価 */}
-          <Typography variant="body1" sx={{ mb: 2, lineHeight: 1.7 }}>
-            {aiSummary.overallAssessment}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
+            <Typography variant="body1" sx={{ lineHeight: 1.7, flex: 1 }}>
+              {aiSummary.overallAssessment}
+            </Typography>
+            <AIChatButton
+              context={{
+                type: 'improvement',
+                data: { overallAssessment: aiSummary.overallAssessment },
+                label: '全体評価',
+              } as ChatContext}
+              size="small"
+            />
+          </Box>
 
         {/* AI総評の詳細 */}
         <>
@@ -173,14 +185,23 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
                 </Box>
                 <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
                   {aiSummary.prioritizedImprovements.map((improvement, index) => (
-                    <Typography
+                    <Box
                       component="li"
                       key={index}
-                      variant="body2"
-                      sx={{ mb: 0.5, lineHeight: 1.6 }}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}
                     >
-                      {improvement}
-                    </Typography>
+                      <Typography variant="body2" sx={{ lineHeight: 1.6, flex: 1 }}>
+                        {improvement}
+                      </Typography>
+                      <AIChatButton
+                        context={{
+                          type: 'improvement',
+                          data: { improvement, index },
+                          label: `改善ポイント${index + 1}`,
+                        } as ChatContext}
+                        size="small"
+                      />
+                    </Box>
                   ))}
                 </Box>
               </Box>
@@ -197,15 +218,27 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
                 </Box>
                 <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
                   {aiSummary.specificRecommendations.map((recommendation, index) => (
-                    <Typography
+                    <Box
                       component="li"
                       key={index}
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ mb: 0.5, lineHeight: 1.6 }}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}
                     >
-                      {recommendation}
-                    </Typography>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                        sx={{ lineHeight: 1.6, flex: 1 }}
+                      >
+                        {recommendation}
+                      </Typography>
+                      <AIChatButton
+                        context={{
+                          type: 'recommendation',
+                          data: { recommendation, index },
+                          label: `推奨事項${index + 1}`,
+                        } as ChatContext}
+                        size="small"
+                      />
+                    </Box>
                   ))}
                 </Box>
               </Box>
@@ -232,13 +265,29 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
                         borderColor: 'divider',
                       }}
                     >
-                      <Typography
-                        variant="subtitle2"
-                        fontWeight="bold"
-                        sx={{ mb: 1.5, color: 'error.main' }}
-                      >
-                        {issue.ruleId}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                        <Typography
+                          variant="subtitle2"
+                          fontWeight="bold"
+                          sx={{ color: 'error.main', flex: 1 }}
+                        >
+                          {issue.ruleId}
+                        </Typography>
+                        <AIChatButton
+                          context={{
+                            type: 'issue',
+                            ruleId: issue.ruleId,
+                            data: {
+                              ruleId: issue.ruleId,
+                              whatIsHappening: issue.whatIsHappening,
+                              whatIsNeeded: issue.whatIsNeeded,
+                              howToFix: issue.howToFix,
+                            },
+                            label: issue.ruleId,
+                          } as ChatContext}
+                          size="small"
+                        />
+                      </Box>
 
                       {/* 何が起きているか */}
                       <Box sx={{ mb: 1.5 }}>

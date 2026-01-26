@@ -1712,4 +1712,319 @@ describe('GeminiService', () => {
       });
     });
   });
+
+  describe('generateChatResponse (Grounding対応)', () => {
+    it('システムプロンプトとユーザープロンプトから回答を生成できる', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: 'コントラスト比を4.5:1以上に調整してください。詳細はガイドラインをご確認ください。',
+                },
+              ],
+            },
+            groundingMetadata: {
+              groundingChunks: [
+                { web: { uri: 'https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html', title: 'Understanding SC 1.4.3' } },
+              ],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse(
+        'システムプロンプト',
+        'この違反はどう修正すればいいですか？'
+      );
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.answer).toContain('コントラスト比');
+        expect(result.value.referenceUrls).toContain('https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html');
+      }
+    });
+
+    it('should extract multiple reference URLs from groundingChunks', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: '複数の参照ソースからの回答' },
+              ],
+            },
+            groundingMetadata: {
+              groundingChunks: [
+                { web: { uri: 'https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html', title: 'W3C' } },
+                { web: { uri: 'https://developer.mozilla.org/en-US/docs/Web/Accessibility', title: 'MDN' } },
+                { web: { uri: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/', title: 'Spindle' } },
+              ],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse('システム', '質問');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.referenceLinks).toHaveLength(3);
+        expect(result.value.referenceLinks[0].uri).toBe('https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html');
+        expect(result.value.referenceLinks[1].uri).toBe('https://developer.mozilla.org/en-US/docs/Web/Accessibility');
+      }
+    });
+
+    it('should extract uri, domain, and title from groundingChunks', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: '回答' }],
+            },
+            groundingMetadata: {
+              groundingChunks: [
+                {
+                  web: {
+                    uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc123',
+                    title: 'WCAG Understanding',
+                    domain: 'w3.org',
+                  },
+                },
+                {
+                  web: {
+                    uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/def456',
+                    title: 'Accessibility | MDN',
+                    domain: 'developer.mozilla.org',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse('システム', '質問');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.referenceLinks).toHaveLength(2);
+        expect(result.value.referenceLinks[0]).toEqual({
+          uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc123',
+          domain: 'w3.org',
+          title: 'WCAG Understanding',
+        });
+        expect(result.value.referenceLinks[1]).toEqual({
+          uri: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/def456',
+          domain: 'developer.mozilla.org',
+          title: 'Accessibility | MDN',
+        });
+      }
+    });
+
+    it('should return domain field for display', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: '回答' }],
+            },
+            groundingMetadata: {
+              groundingChunks: [
+                { web: { uri: 'https://redirect.url', title: 'Title', domain: 'example.com' } },
+              ],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse('システム', '質問');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.referenceLinks[0].domain).toBe('example.com');
+      }
+    });
+
+    it('should return empty array when no groundingChunks exist', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: 'Grounding情報なしの回答' },
+              ],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse('システム', '質問');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.value.referenceUrls).toEqual([]);
+      }
+    });
+
+    it('should use googleSearch tool in request', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [{ text: '回答' }],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      await GeminiService.generateChatResponse('システムプロンプト', '質問');
+
+      expect(mockFetch).toHaveBeenCalled();
+      const fetchCall = mockFetch.mock.calls[0];
+      const requestBody = JSON.parse(fetchCall[1].body);
+
+      expect(requestBody.tools).toEqual([{ google_search: {} }]);
+    });
+
+    it('タイムアウト時はタイムアウトエラーを返す', async () => {
+      mockFetch.mockImplementation(() =>
+        Promise.reject(new DOMException('Aborted', 'AbortError'))
+      );
+
+      const result = await GeminiService.generateChatResponse(
+        'システムプロンプト',
+        '質問'
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('timeout');
+      }
+    });
+
+    it('レート制限時はretryAfter情報を含むエラーを返す', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: {
+          get: (name: string) => name === 'Retry-After' ? '30' : null,
+        },
+      });
+
+      const result = await GeminiService.generateChatResponse(
+        'システムプロンプト',
+        '質問'
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('rate_limit');
+        expect(result.error.retryAfter).toBe(30);
+      }
+    });
+
+    it('レスポンスにテキストがない場合はエラーを返す', async () => {
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [],
+            },
+          },
+        ],
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => mockResponse,
+      });
+
+      const result = await GeminiService.generateChatResponse(
+        'システムプロンプト',
+        '質問'
+      );
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe('api_error');
+      }
+    });
+
+    it('リトライ機構が動作する（タイムアウト後に成功）', async () => {
+      vi.useFakeTimers();
+
+      const mockResponse = {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: '回答テキスト',
+                },
+              ],
+            },
+          },
+        ],
+      };
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.reject(new DOMException('Aborted', 'AbortError'));
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => mockResponse,
+        });
+      });
+
+      const resultPromise = GeminiService.generateChatResponse(
+        'システムプロンプト',
+        '質問'
+      );
+
+      await vi.runAllTimersAsync();
+
+      const result = await resultPromise;
+
+      expect(result.success).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
+  });
 });

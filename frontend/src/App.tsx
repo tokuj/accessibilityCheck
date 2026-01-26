@@ -7,6 +7,10 @@ import { UrlInput } from './components/UrlInput';
 import { ReportSummary } from './components/ReportSummary';
 import { AnalysisProgress } from './components/AnalysisProgress';
 import { analyzeMultipleUrlsWithSSE } from './services/api';
+import {
+  clearAllChatHistory,
+  setCurrentTargetUrl
+} from './utils/chat-storage';
 import type { AccessibilityReport, AuthConfig, LogEntry, AnalysisState } from './types/accessibility';
 
 // 最大ログ行数（メモリ管理のため）
@@ -39,6 +43,12 @@ function App() {
    * @requirement 6.1 - 入力されたURLリストを保存し、分析状態を初期化する
    */
   const handleAnalyze = useCallback((urls: string[], auth?: AuthConfig, sessionId?: string, passphrase?: string) => {
+    // 再分析時は常にチャット履歴をクリア
+    clearAllChatHistory();
+
+    const primaryUrl = urls[0] || '';
+    setCurrentTargetUrl(primaryUrl);
+
     setLoading(true);
     setError(null);
     setReport(null);

@@ -6,14 +6,16 @@
 
 **Users**: 開発者、QAエンジニア、アクセシビリティ担当者が、レポート確認中にWCAG基準や違反の意味、修正方法を即座に確認するために利用する。
 
-**Impact**: 既存のレポート表示コンポーネント（ScoreCard, ViolationsTable等）に対話ポイントを追加し、新規のチャットAPI（`POST /api/chat`）とSpindleマッピングデータを導入する。
+**Impact**: 既存のレポート表示コンポーネント（ScoreCard, ViolationsTable等）に対話ポイントを追加し、新規のチャットAPI（`POST /api/chat`）とGemini Grounding（Web検索）を導入する。
 
 ### Goals
 
 - レポート内の全ての主要項目（スコア、違反、推奨事項など）に対話ポイントを設置
 - FigmaコメントのようなコンパクトなポップオーバーUIで質問・回答を表示
-- Spindleガイドラインを参照元としてAIハルシネーションを防止
+- Gemini GroundingによるWeb検索でAIハルシネーションを防止（信頼性の高いソースを参照）
+- 認知設計ベースのプロンプトエンジニアリング（5要素：前提、状況、目的、動機、制約）
 - キーボード操作・スクリーンリーダー対応によるアクセシビリティ確保
+- チャット開始時にユーザーインパクト説明を自動表示
 
 ### Non-Goals
 
@@ -49,13 +51,12 @@ graph TB
         EXP[Express Server]
         CR[ChatRouter]
         CPB[ChatPromptBuilder]
-        SM[SpindleMapping]
         GS[GeminiService]
     end
 
     subgraph External
-        GEMINI[Gemini 2.0 Flash API]
-        SPINDLE[Spindle Guidelines]
+        GEMINI[Gemini 2.0 Flash API + Grounding]
+        WEBSEARCH[Web検索結果]
     end
 
     RC --> ACB
@@ -67,10 +68,9 @@ graph TB
     CAPI --> EXP
     EXP --> CR
     CR --> CPB
-    CPB --> SM
     CR --> GS
     GS --> GEMINI
-    CPB -.-> SPINDLE
+    GEMINI --> WEBSEARCH
 ```
 
 **Architecture Integration**:
@@ -143,22 +143,24 @@ sequenceDiagram
 | 5.1-5.5 | ローディング・エラー状態 | AIChatPopover, useAIChat | - | 対話フロー |
 | 6.1-6.6 | アクセシビリティ対応 | AIChatButton, AIChatPopover | - | - |
 | 7.1-7.6 | バックエンドAPI | ChatRouter | ChatRequest, ChatResponse | 対話フロー |
-| 8.1-8.6 | Spindleマッピング | SpindleMapping, PromptBuilder | SpindleMap | - |
-| 9.1-9.8 | プロンプトエンジニアリング | PromptBuilder | PromptTemplate | - |
+| 8.1-8.5 | Web検索ベース情報取得 | GeminiService（Grounding） | GroundingResult | 対話フロー |
+| 9.1-9.5 | プロンプトエンジニアリング（認知設計） | PromptBuilder | CognitivePrompt | - |
+| 10.1-10.4 | 初期メッセージ（ユーザーインパクト） | AIChatPopover, useAIChat | InitialMessage | 対話フロー |
+| 11.1-11.2 | 日本語入力（IME）対応 | AIChatPopover | - | - |
 
 ## Components and Interfaces
 
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 |-----------|--------------|--------|--------------|-----------------|-----------|
 | AIChatButton | Frontend/UI | 対話ポイントのトリガーボタン | 1.1, 1.5, 4.1-4.12, 6.1 | AIChatPopover (P0) | State |
-| AIChatPopover | Frontend/UI | 対話UI（入力・履歴・回答表示） | 1.2-1.6, 5.1-5.5, 6.2-6.6 | useAIChat (P0) | State |
-| useAIChat | Frontend/Hook | 対話状態・API呼び出し管理 | 2.1, 5.1-5.5 | chat-api (P0), useChatHistory (P1) | Service |
+| AIChatPopover | Frontend/UI | 対話UI（入力・履歴・回答表示・初期メッセージ・IME対応） | 1.2-1.6, 5.1-5.5, 6.2-6.6, 10.1-10.4, 11.1-11.2 | useAIChat (P0) | State |
+| useAIChat | Frontend/Hook | 対話状態・API呼び出し・初期メッセージ取得 | 2.1, 5.1-5.5, 10.1-10.4 | chat-api (P0), useChatHistory (P1) | Service |
 | useChatHistory | Frontend/Hook | 履歴管理（sessionStorage） | 3.1-3.5 | chat-storage (P0) | State |
 | chat-api | Frontend/Service | バックエンドAPI呼び出し | 2.1 | - | API |
 | chat-storage | Frontend/Util | sessionStorage操作 | 3.1, 3.4, 3.5 | - | - |
 | ChatRouter | Backend/Route | `/api/chat`エンドポイント | 7.1-7.6 | PromptBuilder (P0), GeminiService (P0) | API |
-| PromptBuilder | Backend/Service | コンテキスト別プロンプト生成 | 9.1-9.8 | SpindleMapping (P0) | Service |
-| SpindleMapping | Backend/Data | WCAG・ルールID→URL対応表 | 8.1-8.6 | - | - |
+| PromptBuilder | Backend/Service | 認知設計ベースプロンプト生成 | 9.1-9.5 | - | Service |
+| GeminiService | Backend/Service | AI呼び出し・Grounding（Web検索） | 8.1-8.5 | Gemini API (P0) | Service |
 
 ### Frontend / UI Layer
 
@@ -211,8 +213,8 @@ interface AIChatButtonProps {
 
 | Field | Detail |
 |-------|--------|
-| Intent | 質問入力・履歴表示・回答表示を行うポップオーバーUI |
-| Requirements | 1.2-1.6, 5.1-5.5, 6.2-6.6 |
+| Intent | 質問入力・履歴表示・回答表示・初期メッセージ表示を行うポップオーバーUI |
+| Requirements | 1.2-1.6, 5.1-5.5, 6.2-6.6, 10.1-10.4, 11.1-11.2 |
 
 **Responsibilities & Constraints**
 
@@ -225,7 +227,7 @@ interface AIChatButtonProps {
 **Dependencies**
 
 - Inbound: AIChatButton — 開閉制御 (P0)
-- Outbound: useAIChat — 質問送信・回答取得 (P0)
+- Outbound: useAIChat — 質問送信・回答取得・初期メッセージ取得 (P0)
 
 **Contracts**: State [x]
 
@@ -238,6 +240,32 @@ interface AIChatPopoverProps {
   context: ChatContext;
   onClose: () => void;
 }
+```
+
+**初期メッセージ機能（Requirement 10）**
+
+- チャットを開いた瞬間にユーザーインパクト説明を自動取得・表示
+- 「質問を入力してください」の代わりに表示
+- AIが該当項目に基づいて生成（初回のみ）
+- 例: 「この問題を放置すると、視覚障害を持つユーザーがこのコンテンツを認識できなくなります」
+
+**IME対応（Requirement 11）**
+
+- `handleInputKeyDown`で`e.nativeEvent.isComposing`をチェック
+- IME変換中（`isComposing=true`）はEnterキーで送信しない
+- `e.key === 'Process'`もチェックして確実にIME状態を検出
+
+```typescript
+const handleInputKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+  // IME変換中は送信しない
+  if (e.nativeEvent.isComposing || e.key === 'Process') {
+    return;
+  }
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleSubmit();
+  }
+};
 ```
 
 **Implementation Notes**
@@ -412,18 +440,20 @@ interface ChatResponse {
 
 | Field | Detail |
 |-------|--------|
-| Intent | コンテキストタイプに応じたプロンプトテンプレート生成 |
-| Requirements | 9.1-9.8 |
+| Intent | 認知設計ベースのプロンプト生成（5要素：前提、状況、目的、動機、制約） |
+| Requirements | 9.1-9.5 |
 
 **Responsibilities & Constraints**
 
-- タイプ別プロンプトテンプレート（violation, score, wcag等）
-- Spindle参照URLの埋め込み
-- 回答制約（日本語、300文字以内、推測禁止）の指示
+- 5要素（前提、状況、目的、動機、制約）を含むプロンプト生成
+- 「あなたは専門家です」型のロールプレイを**使用しない**
+- 与えられた情報のみを使用し、推測しない
+- 情報が不足している場合はWeb検索結果を参照するよう指示
+- ユーザーインパクト説明の生成（初期メッセージ用）
 
 **Dependencies**
 
-- Outbound: SpindleMapping — URL取得 (P0)
+- なし（SpindleMappingは削除）
 
 **Contracts**: Service [x]
 
@@ -432,76 +462,157 @@ interface ChatResponse {
 ```typescript
 interface PromptBuilderService {
   buildPrompt(context: ChatContext, question: string): BuiltPrompt;
+  buildInitialMessagePrompt(context: ChatContext): BuiltPrompt;
 }
 
 interface BuiltPrompt {
   systemPrompt: string;
   userPrompt: string;
-  referenceUrl: string;
 }
 ```
 
-**Prompt Template Example** (violation type):
+**Prompt Template（認知設計ベース）**
 
 ```
-あなたはWebアクセシビリティの専門家です。
-以下のSpindleガイドラインを参照元として回答してください: {referenceUrl}
+【前提】
+- この診断結果はaxe-core、pa11y、Lighthouseによる自動アクセシビリティ検査ツールの出力である
+- アクセシビリティは障害を持つユーザーがWebを利用するために必要
+- WCAG（Web Content Accessibility Guidelines）は国際標準のガイドライン
+- 与えられた情報のみを使用し、推測しない
+- 情報が不足している場合はWeb検索結果を参照する
 
-ユーザーは「{ruleId}」（WCAG {wcagCriteria}）という違反について質問しています。
-違反の説明: {description}
+【状況】
+- 検出ツール: {toolSource}（axe-core/pa11y/lighthouse）
+- 項目タイプ: {type}
+- ルールID: {ruleId}
+- WCAG基準: {wcagCriteria}
+- 影響度: {impact}（致命的/深刻/中程度/軽微）
+- ツールからのメッセージ: {description}
+- 検出ノード数: {nodeCount}件
+- ツール参照ドキュメント: {helpUrl}
+- 項目ラベル: {label}
+
+【目的】
+- {toolSource}が検出したこの問題について、正確で実用的な回答を提供する
+- 具体的な修正例（コード例を含む）を提示する
+
+【動機】
+- 開発者がアクセシビリティ問題を理解し、修正できるようにする
+- ユーザーへの影響を具体的に伝える
+
+【制約】
+- 日本語で簡潔に回答する
+- 与えられた情報のみを使用し、推測しない
+- 情報が不足している場合はWeb検索結果を参照する
+- 存在しないURLを生成しない
+- 参照URLは実際にWeb検索で取得したもののみを使用する
+- 信頼性の高いソース（W3C、MDN、デジタル庁ガイドライン等）を優先する
+- AIの内部処理（Web検索を行います、検索結果を参照しますなど）について言及しない
 
 質問: {question}
-
-回答のルール:
-- 日本語で300文字以内で簡潔に回答してください
-- 参照元に記載のない情報は推測せず、「詳細はガイドラインをご確認ください」と案内してください
-- 具体的な修正例を含めてください
-- 回答の最後に参照元のURLを記載してください
 ```
 
-### Backend / Data Layer
+**影響度マッピング**:
 
-#### SpindleMapping
+| 英語 | 日本語 |
+|------|--------|
+| critical | 致命的 |
+| serious | 深刻 |
+| moderate | 中程度 |
+| minor | 軽微 |
+
+**初期メッセージ用プロンプトテンプレート**
+
+```
+【前提】
+- この情報は{toolSource}による自動アクセシビリティ検査の結果である
+- ユーザーはこのアクセシビリティ項目について理解を深めたい
+- 技術的な説明よりも、実際のユーザーへの影響を知りたい
+
+【状況】
+- 検出ツール: {toolSource}
+- 項目タイプ: {type}
+- ルールID: {ruleId}
+- WCAG基準: {wcagCriteria}
+- 影響度: {impact}
+- ツールからのメッセージ: {description}
+- 検出ノード数: {nodeCount}件
+- ツール参照ドキュメント: {helpUrl}
+- 項目ラベル: {label}
+
+【目的】
+- この項目を満たさない場合に、どのようなユーザーがどう困るのかを説明する
+
+【動機】
+- 開発者にアクセシビリティの重要性を伝える
+- 具体的な困りごとの例を示すことで理解を促進する
+
+【制約】
+- 100文字以内で簡潔に
+- 具体的な困りごとの例を含める
+- 技術用語は最小限に
+- 推測せず、Web検索結果を参照する
+```
+
+### Backend / Service Layer (Additional)
+
+#### Gemini Grounding（Web検索）
 
 | Field | Detail |
 |-------|--------|
-| Intent | WCAG基準・ルールIDとSpindle URLの対応表 |
-| Requirements | 8.1-8.6 |
+| Intent | WCAG基準・ルールIDに関する情報をWeb検索で取得しハルシネーションを防止 |
+| Requirements | 8.1-8.5 |
 
 **Responsibilities & Constraints**
 
-- WCAG基準（1.1.1, 1.4.3等）→ Spindle URL
-- ルールID（color-contrast, image-alt等）→ Spindle URL
-- マッピングがない場合はフォールバックURL（トップページ）を返却
+- Gemini API with Grounding（Google Search）を使用
+- 信頼性の高いソース（W3C、MDN、デジタル庁ガイドライン等）を優先
+- 検索結果のURLを参照として返却
+- 検索結果が得られない場合は「詳細はWCAGガイドラインをご確認ください」と案内
+- 存在しないURLを生成しない
 
 **Contracts**: Service [x]
 
-##### Data Structure
+##### Gemini Grounding Configuration
 
 ```typescript
-interface SpindleMappingService {
-  getUrlForWcag(criterion: string): string;
-  getUrlForRuleId(ruleId: string): string;
-  getUrlForContext(context: ChatContext): string;
+interface GeminiGroundingConfig {
+  enableGrounding: boolean;
+  groundingSource: 'google_search';
 }
 
-const SPINDLE_BASE_URL = 'https://a11y-guidelines.ameba.design';
-const SPINDLE_FALLBACK_URL = SPINDLE_BASE_URL;
-
-// 初期マッピングデータ（段階的に拡充）
-const wcagToSpindleMap: Record<string, string> = {
-  '1.1.1': `${SPINDLE_BASE_URL}/1/non-text-content/`,
-  '1.4.3': `${SPINDLE_BASE_URL}/1/contrast-minimum/`,
-  '2.4.4': `${SPINDLE_BASE_URL}/2/link-purpose/`,
-  // ... 他のマッピング
-};
-
-const ruleIdToSpindleMap: Record<string, string> = {
-  'color-contrast': `${SPINDLE_BASE_URL}/1/contrast-minimum/`,
-  'image-alt': `${SPINDLE_BASE_URL}/1/non-text-content/`,
-  // ... 他のマッピング
-};
+interface GroundingResult {
+  answer: string;
+  groundingMetadata?: {
+    searchEntryPoint?: {
+      renderedContent: string;
+    };
+    groundingChunks?: Array<{
+      web?: {
+        uri: string;
+        title: string;
+      };
+    }>;
+    groundingSupports?: Array<{
+      segment: {
+        startIndex: number;
+        endIndex: number;
+        text: string;
+      };
+      groundingChunkIndices: number[];
+      confidenceScores: number[];
+    }>;
+    webSearchQueries?: string[];
+  };
+}
 ```
+
+**Implementation Notes**
+
+- GeminiServiceの`generateChatResponse`メソッドでgroundingを有効化
+- `tools: [{ googleSearch: {} }]`をAPIリクエストに含める
+- 回答に含まれる参照URLは`groundingMetadata.groundingChunks`から取得
+- SpindleMappingは削除（静的マッピングではなく動的Web検索に移行）
 
 ## Data Models
 

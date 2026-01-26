@@ -3,6 +3,8 @@ import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import type { CategoryScore } from '../utils/scoreCalculator';
+import { AIChatButton } from './AIChatButton';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface ScoreCardProps {
   totalScore: number;
@@ -19,6 +21,19 @@ function CategoryProgressBar({ category }: { category: CategoryScore }) {
     return '#f44336';
   };
 
+  // カテゴリ用のChatContext
+  const categoryContext: ChatContext = {
+    type: 'score',
+    data: {
+      categoryName: category.name,
+      categoryNameEn: category.nameEn,
+      score: category.score,
+      passes: category.passes,
+      total: category.total,
+    },
+    label: `${category.name}スコア`,
+  };
+
   return (
     <Box sx={{ flex: 1, minWidth: '200px' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
@@ -29,6 +44,7 @@ function CategoryProgressBar({ category }: { category: CategoryScore }) {
         <Typography variant="body2" fontWeight="bold">
           {category.score}点
         </Typography>
+        <AIChatButton context={categoryContext} size="small" />
       </Box>
       <LinearProgress
         variant="determinate"
@@ -48,6 +64,18 @@ function CategoryProgressBar({ category }: { category: CategoryScore }) {
 }
 
 export function ScoreCard({ totalScore, categories, passCount, violationCount }: ScoreCardProps) {
+  // 総合スコア用のChatContext
+  const totalScoreContext: ChatContext = {
+    type: 'score',
+    data: {
+      totalScore,
+      passCount,
+      violationCount,
+      isOverallScore: true,
+    },
+    label: '総合スコア',
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
@@ -60,9 +88,12 @@ export function ScoreCard({ totalScore, categories, passCount, violationCount }:
           </Typography>
         </Box>
         <Box sx={{ textAlign: 'right' }}>
-          <Typography variant="caption" color="text.secondary">
-            総合スコア
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+            <Typography variant="caption" color="text.secondary">
+              総合スコア
+            </Typography>
+            <AIChatButton context={totalScoreContext} size="small" />
+          </Box>
           <Typography variant="h3" fontWeight="bold" sx={{ lineHeight: 1 }}>
             {totalScore}
             <Typography component="span" variant="h5" color="text.secondary">

@@ -470,6 +470,7 @@ describe('AIChatPopover', () => {
       vi.mocked(chatApi.sendInitialMessageRequest).mockResolvedValue({
         answer: 'この問題を放置すると視覚障害者がコンテンツを認識できなくなります',
         referenceUrls: [],
+        referenceLinks: [],
       });
 
       render(

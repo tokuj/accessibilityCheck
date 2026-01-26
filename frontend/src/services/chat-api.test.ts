@@ -29,7 +29,8 @@ describe('chat-api', () => {
     it('should return response on success', async () => {
       const mockResponse: ChatResponse = {
         answer: 'コントラスト比を4.5:1以上にしてください。',
-        referenceUrl: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/',
+        referenceUrls: ['https://a11y-guidelines.ameba.design/1/contrast-minimum/'],
+        referenceLinks: [{ uri: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/', title: 'ameba.design' }],
       };
 
       vi.mocked(fetch).mockResolvedValueOnce(

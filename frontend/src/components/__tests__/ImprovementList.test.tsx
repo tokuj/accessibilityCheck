@@ -38,6 +38,7 @@ const mockViolations: RuleResult[] = [
     nodeCount: 5,
     wcagCriteria: ['1.4.3'],
     helpUrl: 'https://example.com/help',
+    toolSource: 'axe-core',
   },
   {
     id: 'image-alt',
@@ -46,6 +47,7 @@ const mockViolations: RuleResult[] = [
     nodeCount: 3,
     wcagCriteria: ['1.1.1'],
     helpUrl: 'https://example.com/help2',
+    toolSource: 'axe-core',
   },
 ];
 
@@ -73,6 +75,7 @@ const mockAISummary: AISummary = {
       howToFix: '<img alt="説明" />を追加',
     },
   ],
+  generatedAt: '2026-01-26T00:00:00Z',
 };
 
 describe('ImprovementList', () => {

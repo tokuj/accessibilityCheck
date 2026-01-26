@@ -33,10 +33,11 @@ describe('useAIChat', () => {
     label: 'コントラスト',
   };
 
-  // Grounding対応：referenceUrlsは配列
+  // Grounding対応：referenceUrlsとreferenceLinksを含む
   const mockResponse = {
     answer: 'コントラスト比を4.5:1以上にしてください。',
     referenceUrls: ['https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html'],
+    referenceLinks: [{ uri: 'https://www.w3.org/WAI/WCAG21/Understanding/contrast-minimum.html', title: 'w3.org' }],
   };
 
   beforeEach(() => {

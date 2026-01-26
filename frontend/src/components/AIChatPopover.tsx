@@ -48,7 +48,6 @@ export function AIChatPopover({
     isLoading,
     error,
     history,
-    initialMessage,
     isLoadingInitialMessage,
     sendQuestion,
     retry,

@@ -83,12 +83,13 @@ describe('LighthouseScores', () => {
     });
 
     it('スコアがN/Aの場合でもAIChatButtonが表示される', () => {
-      const scoresWithNA: LighthouseScoresType = {
+      // N/A（未定義）のスコアをテストするため、型チェックをバイパス
+      const scoresWithNA = {
         performance: undefined,
         accessibility: 92,
         bestPractices: undefined,
         seo: 95,
-      };
+      } as unknown as LighthouseScoresType;
       render(<LighthouseScores scores={scoresWithNA} />);
 
       // 4つのスコア行すべてにAIChatButton

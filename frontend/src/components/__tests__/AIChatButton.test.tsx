@@ -7,11 +7,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AIChatButton } from '../AIChatButton';
 import type { ChatContext } from '../../utils/chat-storage';
-import * as chatApi from '../../services/chat-api';
 
 // chat-apiモジュールをモック
 vi.mock('../../services/chat-api', () => ({
   sendChatRequest: vi.fn(),
+  sendInitialMessageRequest: vi.fn(),
   ChatApiError: class ChatApiError extends Error {
     type: string;
     retryAfter?: number;
@@ -31,11 +31,6 @@ describe('AIChatButton', () => {
     wcagCriteria: ['1.4.3'],
     data: { description: 'コントラスト不足' },
     label: 'コントラスト',
-  };
-
-  const mockResponse = {
-    answer: 'コントラスト比を4.5:1以上にしてください。',
-    referenceUrl: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/',
   };
 
   beforeEach(() => {

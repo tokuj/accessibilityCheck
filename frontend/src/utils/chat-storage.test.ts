@@ -125,7 +125,8 @@ describe('chat-storage', () => {
           id: 'entry-1',
           question: 'この違反はどう修正すればいいですか？',
           answer: 'コントラスト比を4.5:1以上に調整してください。',
-          referenceUrl: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/',
+          referenceUrls: ['https://a11y-guidelines.ameba.design/1/contrast-minimum/'],
+          referenceLinks: [{ uri: 'https://a11y-guidelines.ameba.design/1/contrast-minimum/', title: 'ameba.design' }],
           timestamp: '2026-01-25T10:00:00Z',
         },
       ];

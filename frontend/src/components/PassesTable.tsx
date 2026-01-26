@@ -9,7 +9,9 @@ import Link from '@mui/material/Link';
 import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { AIChatButton } from './AIChatButton';
 import type { PageResult } from '../types/accessibility';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface PassesTableProps {
   pages: PageResult[];
@@ -40,6 +42,7 @@ export function PassesTable({ pages }: PassesTableProps) {
             <TableCell>ノード数</TableCell>
             <TableCell>WCAG項番</TableCell>
             <TableCell>詳細</TableCell>
+            <TableCell>AI</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -79,6 +82,23 @@ export function PassesTable({ pages }: PassesTableProps) {
                 <Link href={pass.helpUrl} target="_blank" rel="noopener">
                   参照
                 </Link>
+              </TableCell>
+              <TableCell>
+                <AIChatButton
+                  context={{
+                    type: 'pass',
+                    ruleId: pass.id,
+                    wcagCriteria: pass.wcagCriteria,
+                    data: {
+                      ruleId: pass.id,
+                      description: pass.description,
+                      nodeCount: pass.nodeCount,
+                      toolSource: pass.toolSource,
+                    },
+                    label: pass.id,
+                  } as ChatContext}
+                  size="small"
+                />
               </TableCell>
             </TableRow>
           ))}

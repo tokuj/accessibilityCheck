@@ -6,6 +6,8 @@ import AccessibilityNewIcon from '@mui/icons-material/AccessibilityNew';
 import VerifiedIcon from '@mui/icons-material/Verified';
 import SearchIcon from '@mui/icons-material/Search';
 import type { LighthouseScores as LighthouseScoresType } from '../types/accessibility';
+import { AIChatButton } from './AIChatButton';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface LighthouseScoresProps {
   scores: LighthouseScoresType;
@@ -20,12 +22,25 @@ function getScoreColor(score: number): 'success' | 'warning' | 'error' {
 interface ScoreRowProps {
   icon: React.ReactNode;
   label: string;
+  labelKey: string;
   score: number | undefined;
 }
 
-function ScoreRow({ icon, label, score }: ScoreRowProps) {
+function ScoreRow({ icon, label, labelKey, score }: ScoreRowProps) {
   const displayScore = score ?? 0;
   const isNA = score === undefined;
+
+  // Lighthouse用のChatContext
+  const context: ChatContext = {
+    type: 'lighthouse',
+    data: {
+      category: labelKey,
+      categoryLabel: label,
+      score: displayScore,
+      isNA,
+    },
+    label: `Lighthouse ${label}`,
+  };
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1.5 }}>
@@ -54,6 +69,7 @@ function ScoreRow({ icon, label, score }: ScoreRowProps) {
       >
         {isNA ? 'N/A' : displayScore}
       </Typography>
+      <AIChatButton context={context} size="small" />
     </Box>
   );
 }
@@ -64,10 +80,10 @@ export function LighthouseScores({ scores }: LighthouseScoresProps) {
       <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
         Lighthouse
       </Typography>
-      <ScoreRow icon={<SpeedIcon fontSize="small" />} label="Performance" score={scores.performance} />
-      <ScoreRow icon={<AccessibilityNewIcon fontSize="small" />} label="Accessibility" score={scores.accessibility} />
-      <ScoreRow icon={<VerifiedIcon fontSize="small" />} label="Best Practices" score={scores.bestPractices} />
-      <ScoreRow icon={<SearchIcon fontSize="small" />} label="SEO" score={scores.seo} />
+      <ScoreRow icon={<SpeedIcon fontSize="small" />} label="Performance" labelKey="performance" score={scores.performance} />
+      <ScoreRow icon={<AccessibilityNewIcon fontSize="small" />} label="Accessibility" labelKey="accessibility" score={scores.accessibility} />
+      <ScoreRow icon={<VerifiedIcon fontSize="small" />} label="Best Practices" labelKey="bestPractices" score={scores.bestPractices} />
+      <ScoreRow icon={<SearchIcon fontSize="small" />} label="SEO" labelKey="seo" score={scores.seo} />
     </Box>
   );
 }

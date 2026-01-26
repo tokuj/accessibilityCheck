@@ -10,7 +10,9 @@ import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import { ImpactBadge } from './ImpactBadge';
+import { AIChatButton } from './AIChatButton';
 import type { PageResult } from '../types/accessibility';
+import type { ChatContext } from '../utils/chat-storage';
 
 interface IncompleteTableProps {
   pages: PageResult[];
@@ -42,6 +44,7 @@ export function IncompleteTable({ pages }: IncompleteTableProps) {
             <TableCell>ノード数</TableCell>
             <TableCell>WCAG項番</TableCell>
             <TableCell>詳細</TableCell>
+            <TableCell>AI</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -84,6 +87,24 @@ export function IncompleteTable({ pages }: IncompleteTableProps) {
                 <Link href={item.helpUrl} target="_blank" rel="noopener">
                   参照
                 </Link>
+              </TableCell>
+              <TableCell>
+                <AIChatButton
+                  context={{
+                    type: 'incomplete',
+                    ruleId: item.id,
+                    wcagCriteria: item.wcagCriteria,
+                    data: {
+                      ruleId: item.id,
+                      description: item.description,
+                      impact: item.impact,
+                      nodeCount: item.nodeCount,
+                      toolSource: item.toolSource,
+                    },
+                    label: item.id,
+                  } as ChatContext}
+                  size="small"
+                />
               </TableCell>
             </TableRow>
           ))}

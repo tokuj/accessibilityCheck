@@ -6,6 +6,7 @@ import { createSSEHandler, parseAuthFromQuery } from './sse-handler';
 import type { SSEEvent } from './analyzers/sse-types';
 import { createSessionsRouter } from './routes/sessions';
 import { createAuthRouter } from './routes/auth';
+import { createChatRouter } from './routes/chat';
 import { storageStateManager } from './auth/storage-state-manager';
 
 const app = express();
@@ -72,6 +73,9 @@ app.use('/api/sessions', createSessionsRouter(storageStateManager));
 
 // Auth API (フォーム解析、インタラクティブログイン)
 app.use('/api/auth', createAuthRouter());
+
+// Chat API (インラインAI対話)
+app.use('/api/chat', createChatRouter());
 
 // 外部IPアドレス確認用エンドポイント（固定IP確認用）
 app.get('/api/egress-ip', async (_, res) => {

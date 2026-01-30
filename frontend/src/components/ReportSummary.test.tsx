@@ -19,15 +19,34 @@ vi.mock('./ScoreCard', () => ({
 }));
 
 vi.mock('./ImprovementList', () => ({
-  ImprovementList: () => <div data-testid="improvement-list">ImprovementList</div>,
+  ImprovementList: ({ onWcagFilter }: { onWcagFilter?: (criterion: string) => void }) => (
+    <div data-testid="improvement-list">
+      ImprovementList
+      {onWcagFilter && (
+        <button
+          data-testid="mock-wcag-filter-trigger"
+          onClick={() => onWcagFilter('1.4.3')}
+        >
+          Mock Filter Trigger
+        </button>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock('./ViolationsTable', () => ({
-  ViolationsTable: ({ pages }: { pages: Array<{ name: string; url: string }> }) => (
-    <div data-testid="violations-table">
+  ViolationsTable: ({
+    pages,
+    wcagFilter,
+  }: {
+    pages: Array<{ name: string; url: string }>;
+    wcagFilter?: string | null;
+  }) => (
+    <div data-testid="violations-table" data-wcag-filter={wcagFilter || ''}>
       {pages.map((page, idx) => (
         <span key={idx} data-testid={`violations-page-${idx}`}>{page.name}</span>
       ))}
+      {wcagFilter && <span data-testid="wcag-filter-active">{wcagFilter}</span>}
     </div>
   ),
 }));
@@ -594,6 +613,79 @@ describe('ReportSummary', () => {
           expect(mockExportReportToPdf).toHaveBeenCalledTimes(2);
         });
       });
+    });
+  });
+
+  describe('Task 11.2: WCAG項番クリックでテーブルフィルタを連動させる', () => {
+    it('ImprovementListにonWcagFilterコールバックが渡されること', () => {
+      const report = createMultiPageMockReport();
+      render(
+        <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+      );
+
+      // モックのImprovementListにフィルタトリガーボタンがあればonWcagFilterが渡されている
+      expect(screen.getByTestId('mock-wcag-filter-trigger')).toBeInTheDocument();
+    });
+
+    it('WCAG項番選択時にフィルタ状態が更新されること', () => {
+      const report = createMultiPageMockReport();
+      render(
+        <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+      );
+
+      // フィルタトリガーをクリック
+      fireEvent.click(screen.getByTestId('mock-wcag-filter-trigger'));
+
+      // ViolationsTableにフィルタが適用されていること
+      expect(screen.getByTestId('wcag-filter-active')).toHaveTextContent('1.4.3');
+    });
+
+    it('フィルタ適用時にViolationsTableにwcagFilterプロパティが渡されること', () => {
+      const report = createMultiPageMockReport();
+      render(
+        <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+      );
+
+      // 初期状態ではフィルタなし
+      const violationsTable = screen.getByTestId('violations-table');
+      expect(violationsTable).toHaveAttribute('data-wcag-filter', '');
+
+      // フィルタトリガーをクリック
+      fireEvent.click(screen.getByTestId('mock-wcag-filter-trigger'));
+
+      // フィルタが適用されていること
+      expect(violationsTable).toHaveAttribute('data-wcag-filter', '1.4.3');
+    });
+
+    it('フィルタ解除ボタンが表示されフィルタを解除できること', () => {
+      const report = createMultiPageMockReport();
+      render(
+        <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+      );
+
+      // フィルタを適用
+      fireEvent.click(screen.getByTestId('mock-wcag-filter-trigger'));
+
+      // フィルタ解除ボタンが表示される
+      const clearButton = screen.getByRole('button', { name: /フィルタ解除/i });
+      expect(clearButton).toBeInTheDocument();
+
+      // フィルタを解除
+      fireEvent.click(clearButton);
+
+      // フィルタが解除されていること
+      const violationsTable = screen.getByTestId('violations-table');
+      expect(violationsTable).toHaveAttribute('data-wcag-filter', '');
+    });
+
+    it('単一ページ時でもWCAGフィルタ機能が動作すること', () => {
+      const report = createMockReport();
+      render(
+        <ReportSummary report={report} url="https://example.com" onClose={() => {}} />
+      );
+
+      // モックのImprovementListにフィルタトリガーボタンがあればonWcagFilterが渡されている
+      expect(screen.getByTestId('mock-wcag-filter-trigger')).toBeInTheDocument();
     });
   });
 });

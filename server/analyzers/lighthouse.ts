@@ -1,4 +1,4 @@
-import type { LighthouseResult, RuleResult, LighthouseScores, ImpactLevel } from './types';
+import type { LighthouseResult, RuleResult, LighthouseScores, ImpactLevel, NodeInfo, ClassificationReason } from './types';
 import { chromium } from 'playwright';
 import { getAdBlockingConfig, getTimeoutConfig } from '../config';
 import {
@@ -51,6 +51,66 @@ function mapScoreToImpact(score: number | null): ImpactLevel | undefined {
   if (score < 0.7) return 'serious';
   if (score < 0.9) return 'moderate';
   return 'minor';
+}
+
+/**
+ * HTML文字列を最大200文字に切り詰める
+ * @requirement 1.3 - ノード情報抽出でHTMLを200文字制限
+ */
+function truncateHtml(html: string, maxLength = 200): string {
+  if (html.length <= maxLength) return html;
+  return html.slice(0, maxLength) + '...';
+}
+
+/**
+ * Lighthouseのaudit detailsからノード情報を抽出
+ * @requirement 1.3, 4.3 - audit.details.itemsからノード情報を抽出
+ */
+function extractNodesFromDetails(details: unknown): NodeInfo[] {
+  if (!details || typeof details !== 'object') return [];
+
+  const d = details as { type?: string; items?: unknown[] };
+  if (!d.items || !Array.isArray(d.items)) return [];
+
+  const nodes: NodeInfo[] = [];
+
+  for (const item of d.items) {
+    if (!item || typeof item !== 'object') continue;
+
+    const itemObj = item as Record<string, unknown>;
+
+    // details.type === 'table' の場合、items[].node からノード情報を抽出
+    if (d.type === 'table' && itemObj.node && typeof itemObj.node === 'object') {
+      const node = itemObj.node as { selector?: string; snippet?: string; nodeLabel?: string };
+      if (node.selector) {
+        nodes.push({
+          target: node.selector,
+          html: truncateHtml(node.snippet || ''),
+        });
+      }
+    }
+    // details.type === 'list' の場合、items から直接抽出
+    else if (d.type === 'list') {
+      const listItem = itemObj as { selector?: string; snippet?: string; nodeLabel?: string };
+      if (listItem.selector) {
+        nodes.push({
+          target: listItem.selector,
+          html: truncateHtml(listItem.snippet || ''),
+        });
+      }
+    }
+  }
+
+  return nodes;
+}
+
+/**
+ * scoreDisplayModeからclassificationReasonを判定
+ * @requirement 3.4, 3.5 - 分類理由の記録
+ */
+function getClassificationReason(scoreDisplayMode?: string): ClassificationReason {
+  if (scoreDisplayMode === 'manual') return 'manual-review';
+  return 'insufficient-data';
 }
 
 // Extract WCAG criteria from Lighthouse audit ID
@@ -187,24 +247,43 @@ export async function analyzeWithLighthouse(
       const audit = lhr.audits[auditRef.id];
       if (!audit) continue;
 
+      // Requirement 3.1, 3.3: scoreDisplayModeがnotApplicableの場合はスキップ
+      const scoreDisplayMode = (audit as { scoreDisplayMode?: string }).scoreDisplayMode;
+      if (scoreDisplayMode === 'notApplicable') {
+        continue;
+      }
+
+      // Requirement 1.3, 4.3: ノード情報を抽出
+      const nodes = extractNodesFromDetails(audit.details);
+
       const ruleResult: RuleResult = {
         id: audit.id,
         description: audit.title,
         impact: mapScoreToImpact(audit.score),
-        nodeCount: audit.details && 'items' in audit.details ? (audit.details.items as unknown[]).length : 0,
+        nodeCount: nodes.length > 0 ? nodes.length : (audit.details && 'items' in audit.details ? (audit.details.items as unknown[]).length : 0),
         helpUrl: audit.description?.includes('http')
           ? audit.description.match(/https?:\/\/[^\s)]+/)?.[0] || ''
           : `https://web.dev/${audit.id}/`,
         wcagCriteria: extractWcagFromAuditId(audit.id),
         toolSource: 'lighthouse' as const,
+        nodes: nodes,
+        rawScore: audit.score,
       };
 
-      if (audit.score === 0) {
-        violations.push(ruleResult);
-      } else if (audit.score === 1) {
-        passes.push(ruleResult);
-      } else if (audit.score === null || (audit.score > 0 && audit.score < 1)) {
+      // Requirement 3.1, 3.2: 分類ロジックの改善
+      // score === 0: 違反
+      // 0 < score < 0.5: 違反
+      // 0.5 <= score < 1: 達成
+      // score === 1: 達成
+      // score === null (かつnotApplicableでない): 不明
+      if (audit.score === null) {
+        // Requirement 3.4, 3.5: 分類理由を記録
+        ruleResult.classificationReason = getClassificationReason(scoreDisplayMode);
         incomplete.push(ruleResult);
+      } else if (audit.score < 0.5) {
+        violations.push(ruleResult);
+      } else {
+        passes.push(ruleResult);
       }
     }
 

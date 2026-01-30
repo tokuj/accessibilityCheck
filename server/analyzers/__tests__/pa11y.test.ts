@@ -246,4 +246,202 @@ describe('Pa11yAnalyzer', () => {
       expect(result.incomplete[0].toolSource).toBe('pa11y');
     });
   });
+
+  describe('ノード情報抽出 (Req 1.3, 3.1)', () => {
+    it('違反結果にノード情報配列が含まれる', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'html > body > img.hero-image',
+            context: '<img src="hero.jpg" class="hero-image">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      expect(result.violations[0].nodes).toBeDefined();
+      expect(result.violations[0].nodes).toHaveLength(1);
+    });
+
+    it('ノード情報にtargetとhtmlが含まれる', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'html > body > img.hero-image',
+            context: '<img src="hero.jpg" class="hero-image">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      const node = result.violations[0].nodes?.[0];
+      expect(node).toBeDefined();
+      expect(node?.target).toBe('html > body > img.hero-image');
+      expect(node?.html).toBe('<img src="hero.jpg" class="hero-image">');
+    });
+
+    it('Pa11yはfailureSummaryを持たない（axe-core固有のため）', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'html > body > img',
+            context: '<img src="photo.jpg">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      const node = result.violations[0].nodes?.[0];
+      expect(node?.failureSummary).toBeUndefined();
+    });
+
+    it('1イシュー=1ノードのため、nodes配列は常に1要素', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'img:nth-child(1)',
+            context: '<img src="a.jpg">',
+          },
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'img:nth-child(2)',
+            context: '<img src="b.jpg">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      // 各違反は個別のRuleResultとして報告される
+      expect(result.violations.length).toBe(2);
+      expect(result.violations[0].nodes).toHaveLength(1);
+      expect(result.violations[1].nodes).toHaveLength(1);
+    });
+
+    it('HTML抜粋（context）が200文字を超える場合は切り詰められる', async () => {
+      const longContext = '<div class="very-long-element">' + 'a'.repeat(250) + '</div>';
+
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Some accessibility violation.',
+            selector: 'html > body > div.orphan',
+            context: longContext,
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      const node = result.violations[0].nodes?.[0];
+      expect(node?.html.length).toBeLessThanOrEqual(200);
+      expect(node?.html.endsWith('...')).toBe(true);
+    });
+
+    it('incompleteにもノード情報が含まれる', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'warning',
+            code: 'WCAG2AA.Principle1.Guideline1_4.1_4_3.G18',
+            message: 'This element has insufficient contrast.',
+            selector: 'span.light-text',
+            context: '<span class="light-text">Low contrast</span>',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      expect(result.incomplete[0].nodes).toBeDefined();
+      expect(result.incomplete[0].nodes).toHaveLength(1);
+      expect(result.incomplete[0].nodes?.[0].target).toBe('span.light-text');
+    });
+
+    it('selectorがundefinedの場合は空文字列を使用', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Some accessibility violation.',
+            selector: undefined,
+            context: '<img src="photo.jpg">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      const node = result.violations[0].nodes?.[0];
+      expect(node?.target).toBe('');
+    });
+
+    it('contextがundefinedの場合は空文字列を使用', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Some accessibility violation.',
+            selector: 'html > body > img',
+            context: undefined,
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      const node = result.violations[0].nodes?.[0];
+      expect(node?.html).toBe('');
+    });
+
+    it('nodeCountは後方互換性のため維持される', async () => {
+      mockPa11y.mockResolvedValue({
+        issues: [
+          {
+            type: 'error',
+            code: 'WCAG2AA.Principle1.Guideline1_1.1_1_1.H37',
+            message: 'Img element missing an alt attribute.',
+            selector: 'html > body > img',
+            context: '<img src="photo.jpg">',
+          },
+        ],
+      });
+
+      const { analyzeWithPa11y } = await import('../pa11y');
+      const result = await analyzeWithPa11y('https://example.com');
+
+      // Pa11yは1イシュー=1ノードなのでnodeCountは常に1
+      expect(result.violations[0].nodeCount).toBe(1);
+      expect(result.violations[0].nodes).toHaveLength(1);
+    });
+  });
 });

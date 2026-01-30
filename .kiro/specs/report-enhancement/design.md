@@ -169,6 +169,13 @@ flowchart LR
 | 5.3 | 100件以上でページネーション | NodeDetails | - | - |
 | 5.4 | モバイル対応 | 全UIコンポーネント | MUI responsive props | - |
 | 5.5 | エラー時グレースフルデグラデーション | NodeDetails | - | エラーハンドリング |
+| 6.1 | ノードのバウンディングボックス返却 | axe.ts, NodeInfo | BoundingBox | 位置情報取得 |
+| 6.2 | スクリーンショット上でハイライト表示 | HighlightedScreenshot, NodeDetails | NodeInfo.boundingBox | 視覚的特定 |
+| 6.3 | 複数ノードに番号振り | HighlightedScreenshot | - | 視覚的特定 |
+| 6.4 | XPath表示とコピー機能 | NodeDetails | NodeInfo.xpath | - |
+| 6.5 | 周辺HTMLコンテキスト表示 | NodeDetails | NodeInfo.contextHtml | - |
+| 6.6 | failureSummaryを修正方法として表示 | NodeDetails | NodeInfo.failureSummary | - |
+| 6.7 | 非表示要素の明示 | NodeDetails | NodeInfo.isHidden | - |
 
 ## Components and Interfaces
 
@@ -177,11 +184,13 @@ flowchart LR
 | Component | Domain/Layer | Intent | Req Coverage | Key Dependencies | Contracts |
 |-----------|--------------|--------|--------------|------------------|-----------|
 | RuleResult (拡張) | Backend/Types | ノード情報を含む結果型 | 1.3, 3.5 | - | Type |
-| NodeInfo (新規) | Backend/Types | 個別ノード情報型 | 1.1, 1.2 | - | Type |
-| axe.ts (修正) | Backend/Analyzer | ノード情報抽出追加 | 1.3 | axe-core (P0) | - |
+| NodeInfo (拡張) | Backend/Types | 個別ノード情報型（位置情報含む） | 1.1, 1.2, 6.1, 6.4, 6.5, 6.7 | - | Type |
+| BoundingBox (新規) | Backend/Types | 要素の位置情報型 | 6.1 | - | Type |
+| axe.ts (修正) | Backend/Analyzer | ノード情報・位置情報抽出追加 | 1.3, 6.1, 6.4, 6.5 | axe-core, Playwright (P0) | - |
 | pa11y.ts (修正) | Backend/Analyzer | ノード情報抽出追加 | 1.3 | pa11y (P0) | - |
 | lighthouse.ts (修正) | Backend/Analyzer | 分類ロジック改善、ノード抽出 | 1.3, 3.1-3.5 | lighthouse (P0) | - |
-| NodeDetails (新規) | Frontend/UI | ノード情報展開表示 | 1.1, 1.2, 1.4, 1.5, 4.5, 5.1, 5.3, 5.5 | MUI Collapse (P1) | State |
+| NodeDetails (拡張) | Frontend/UI | ノード情報展開表示、視覚的特定 | 1.1, 1.2, 1.4, 1.5, 4.5, 5.1, 5.3, 5.5, 6.2-6.7 | MUI Collapse, HighlightedScreenshot (P1) | State |
+| HighlightedScreenshot (新規) | Frontend/UI | スクリーンショット上のハイライト | 6.2, 6.3 | Canvas API (P1) | State |
 | WcagAggregateSummary (新規) | Frontend/UI | WCAG項番別集約表示 | 2.1-2.5 | wcag-mapping (P1) | State |
 | wcag-mapping.ts (新規) | Frontend/Utils | WCAGレベル判定 | 2.5 | - | Service |
 | ViolationsTable (修正) | Frontend/UI | NodeDetails統合 | 1.1, 4.5 | NodeDetails (P1) | - |
@@ -201,13 +210,32 @@ flowchart LR
 **Type Definition**
 
 ```typescript
+interface BoundingBox {
+  /** 左上X座標（ページ座標系） */
+  x: number;
+  /** 左上Y座標（ページ座標系） */
+  y: number;
+  /** 要素の幅（ピクセル） */
+  width: number;
+  /** 要素の高さ（ピクセル） */
+  height: number;
+}
+
 interface NodeInfo {
   /** CSSセレクタ（要素を一意に特定） */
   target: string;
+  /** XPath（要素をDOM上で正確に特定） @requirement 6.4 */
+  xpath?: string;
   /** HTML抜粋（最大200文字） */
   html: string;
+  /** 周辺HTML（親要素と兄弟要素を含む） @requirement 6.5 */
+  contextHtml?: string;
   /** 失敗理由のサマリー（axe-coreのみ） */
   failureSummary?: string;
+  /** 要素のバウンディングボックス @requirement 6.1 */
+  boundingBox?: BoundingBox;
+  /** 要素がビューポート外または非表示かどうか @requirement 6.7 */
+  isHidden?: boolean;
 }
 ```
 
@@ -327,12 +355,13 @@ function getAllWcagCriteria(): WcagCriterionInfo[];
 
 | Field | Detail |
 |-------|--------|
-| Intent | ノード情報の展開表示コンポーネント |
-| Requirements | 1.1, 1.2, 1.4, 1.5, 4.5, 5.1, 5.3, 5.5 |
+| Intent | ノード情報の展開表示コンポーネント（問題箇所の視覚的特定を含む） |
+| Requirements | 1.1, 1.2, 1.4, 1.5, 4.5, 5.1, 5.3, 5.5, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7 |
 
 **Dependencies**
 
 - Inbound: ViolationsTable, IncompleteTable, PassesTable — ノード表示 (P1)
+- Outbound: HighlightedScreenshot — スクリーンショット上のハイライト (P1)
 - External: MUI Collapse, Box, Typography — UI表示 (P1)
 
 **Contracts**: State [x]
@@ -349,19 +378,67 @@ interface NodeDetailsProps {
   onToggle: () => void;
   /** 初期表示件数（デフォルト: 10） */
   initialDisplayCount?: number;
+  /** スクリーンショット画像（Base64） @requirement 6.2 */
+  screenshot?: string;
+  /** 選択中のノードインデックス @requirement 6.5 */
+  selectedNodeIndex?: number;
+  /** ノード選択コールバック @requirement 6.5 */
+  onNodeSelect?: (index: number) => void;
 }
 ```
 
 **State Management**
 
 - `showAll: boolean` - 全件表示フラグ
+- `selectedNode: number | null` - 選択中のノードインデックス
 - 10件超の場合は「さらに表示」ボタンで残りを展開
 
 **Implementation Notes**
 
 - MUI Collapseで展開アニメーション
 - HTML抜粋は`<code>`タグでモノスペース表示
+- XPathとCSSセレクタの両方を表示し、コピーボタンを設置 @requirement 6.4
+- `failureSummary`を「修正方法」ラベルで表示 @requirement 6.6
+- ノードクリック時に`contextHtml`（周辺HTML）を表示 @requirement 6.5
+- `isHidden`がtrueの場合「この要素はビューポート外または非表示です」を表示 @requirement 6.7
 - エラー時は「ノード情報を取得できませんでした」を表示
+
+#### HighlightedScreenshot (新規)
+
+| Field | Detail |
+|-------|--------|
+| Intent | スクリーンショット上で問題箇所をハイライト表示 |
+| Requirements | 6.2, 6.3 |
+
+**Dependencies**
+
+- Inbound: NodeDetails — ハイライト表示 (P1)
+- External: MUI Box, canvas API — 描画 (P1)
+
+**Contracts**: State [x]
+
+**Props Interface**
+
+```typescript
+interface HighlightedScreenshotProps {
+  /** スクリーンショット画像（Base64） */
+  screenshot: string;
+  /** ハイライト対象のノード情報配列 */
+  nodes: NodeInfo[];
+  /** 選択中のノードインデックス */
+  selectedNodeIndex?: number;
+  /** ノードクリックコールバック */
+  onNodeClick?: (index: number) => void;
+}
+```
+
+**Implementation Notes**
+
+- Canvas APIまたはSVGオーバーレイでバウンディングボックスを赤枠描画 @requirement 6.2
+- 各ノードに番号ラベル（1, 2, 3...）を表示 @requirement 6.3
+- 選択中のノードは強調色（青枠）で表示
+- スクリーンショット拡大・縮小機能を提供
+- boundingBoxがないノードはリストにのみ表示（スクリーンショット上にはマークなし）
 
 #### WcagAggregateSummary (新規)
 
@@ -585,3 +662,293 @@ RuleResult (1) -----> (0..N) NodeInfo
 - WCAG集約はuseMemoでメモ化
 - HTML抜粋は200文字制限でペイロード削減
 - 10件ページネーションで大量データ対応
+
+## Requirement 7: 問題箇所表示の改善
+
+### 7.1 axe-core日本語ロケール適用
+
+**目的**: failureSummary、description、helpを日本語で出力する
+
+**技術調査結果**:
+- axe-coreは`node_modules/axe-core/locales/ja.json`で日本語ロケールを提供
+- `@axe-core/playwright`のAxeBuilderはカスタム`axeSource`を受け入れる
+- 日本語ロケールには全ルール・チェック・failureSummariesの翻訳が含まれる
+
+**実装方法**:
+
+```typescript
+// server/analyzers/axe.ts
+import * as fs from 'fs';
+
+// axe-coreソースと日本語ロケールを読み込み
+const axeCoreSource = fs.readFileSync(
+  require.resolve('axe-core/axe.min.js'),
+  'utf8'
+);
+const jaLocale = JSON.parse(
+  fs.readFileSync(
+    require.resolve('axe-core/locales/ja.json'),
+    'utf8'
+  )
+);
+
+// ロケール設定を含むカスタムソースを生成
+const axeSourceWithJaLocale = `
+  ${axeCoreSource}
+  axe.configure({ locale: ${JSON.stringify(jaLocale)} });
+`;
+
+// AxeBuilderで使用
+function createAxeBuilder(page: Page): AxeBuilder {
+  return new AxeBuilder({
+    page,
+    axeSource: axeSourceWithJaLocale,
+  }).withTags(WCAG_TAGS);
+}
+```
+
+**出力例**:
+- Before: `Fix all of the following: Element is in tab order and does not have accessible text`
+- After: `次のいずれかを修正します: 要素にアクセシブルな名前がありません`
+
+### 7.2 要素説明（elementDescription）の追加
+
+**目的**: CSSセレクタの代わりに人間が読める説明を表示
+
+**NodeInfo型拡張**:
+
+```typescript
+// server/analyzers/types.ts
+export interface NodeInfo {
+  target: string;
+  html: string;
+  failureSummary?: string;
+  xpath?: string;
+  contextHtml?: string;
+  boundingBox?: BoundingBox;
+  isHidden?: boolean;
+  // 新規フィールド
+  elementDescription?: string;  // 例: 'リンク「詳細はこちら...」'
+}
+```
+
+**タグ名→日本語ラベル変換テーブル**:
+
+```typescript
+const TAG_LABELS: Record<string, string> = {
+  'a': 'リンク',
+  'img': '画像',
+  'button': 'ボタン',
+  'input': '入力欄',
+  'select': 'セレクトボックス',
+  'textarea': 'テキストエリア',
+  'form': 'フォーム',
+  'table': 'テーブル',
+  'nav': 'ナビゲーション',
+  'header': 'ヘッダー',
+  'footer': 'フッター',
+  'main': 'メインコンテンツ',
+  'section': 'セクション',
+  'article': '記事',
+  'aside': 'サイドバー',
+  'h1': '見出し1',
+  'h2': '見出し2',
+  'h3': '見出し3',
+  'h4': '見出し4',
+  'h5': '見出し5',
+  'h6': '見出し6',
+  'p': '段落',
+  'ul': 'リスト',
+  'ol': '番号付きリスト',
+  'li': 'リスト項目',
+  'div': 'ブロック要素',
+  'span': 'インライン要素',
+  'iframe': 'インラインフレーム',
+  'video': '動画',
+  'audio': '音声',
+};
+```
+
+**生成ロジック**:
+
+```typescript
+async function generateElementDescription(element: ElementHandle): Promise<string> {
+  return await element.evaluate((el) => {
+    const tagName = el.tagName.toLowerCase();
+    const tagLabel = TAG_LABELS[tagName] || tagName;
+
+    // テキスト内容を取得（20文字で切り詰め）
+    const textContent = el.textContent?.trim().slice(0, 20) || '';
+
+    // alt属性やaria-labelから補足情報を取得
+    const alt = el.getAttribute('alt');
+    const ariaLabel = el.getAttribute('aria-label');
+    const title = el.getAttribute('title');
+    const placeholder = el.getAttribute('placeholder');
+
+    // 優先順位: aria-label > alt > title > placeholder > textContent
+    const label = ariaLabel || alt || title || placeholder || textContent;
+
+    if (label) {
+      const truncatedLabel = label.length > 20 ? label.slice(0, 20) + '...' : label;
+      return `${tagLabel}「${truncatedLabel}」`;
+    }
+
+    return tagLabel;
+  });
+}
+```
+
+**表示例**:
+- Before: `.md\:max-w-\[max\(273px\,calc\(33\.3\%_-\(24px\*2\/3\)\)\)\]:nth-child(3)`
+- After: `リンク「詳細はこちら...」`
+
+### 7.3 HighlightedScreenshot統合
+
+**目的**: スクリーンショット上で問題箇所をハイライト表示し、ノードリストと連携
+
+**ViolationsTable修正**:
+
+```typescript
+// frontend/src/components/ViolationsTable.tsx
+
+interface ViolationsTableProps {
+  violations: RuleResult[];
+  onAIChatRequest?: (violation: RuleResult) => void;
+  wcagFilter?: string | null;
+  // 新規プロパティ
+  screenshot?: string;
+}
+
+// 展開行内でHighlightedScreenshotを表示
+{screenshot && nodes.some(n => n.boundingBox) && (
+  <Box sx={{ mb: 2 }}>
+    <HighlightedScreenshot
+      screenshot={screenshot}
+      nodes={nodes}
+      selectedNodeIndex={selectedNodeIndex}
+      onNodeClick={setSelectedNodeIndex}
+    />
+  </Box>
+)}
+```
+
+**ReportSummary修正**:
+
+```typescript
+// frontend/src/components/ReportSummary.tsx
+
+<ViolationsTable
+  violations={violations}
+  wcagFilter={wcagFilter}
+  onAIChatRequest={handleAIChatRequest}
+  screenshot={currentScreenshot}  // 新規追加
+/>
+```
+
+**ノード選択の同期**:
+
+```typescript
+// ViolationsTable内で展開行ごとにselectedNodeIndex状態を管理
+const [selectedNodes, setSelectedNodes] = useState<Record<string, number | undefined>>({});
+
+const handleNodeSelect = (violationId: string, nodeIndex: number) => {
+  setSelectedNodes(prev => ({
+    ...prev,
+    [violationId]: nodeIndex,
+  }));
+};
+```
+
+### 7.4 位置情報バッジ
+
+**目的**: 要素がページ内のどこにあるかを視覚的に表示
+
+**位置計算ロジック**:
+
+```typescript
+function getPositionLabel(boundingBox: BoundingBox, viewportSize: { width: number; height: number }): string {
+  const { x, y, width, height } = boundingBox;
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+
+  // 垂直位置
+  let vertical: string;
+  if (centerY < viewportSize.height / 3) {
+    vertical = '上部';
+  } else if (centerY < (viewportSize.height * 2) / 3) {
+    vertical = '中央';
+  } else {
+    vertical = '下部';
+  }
+
+  // 水平位置
+  let horizontal: string;
+  if (centerX < viewportSize.width / 3) {
+    horizontal = '左';
+  } else if (centerX < (viewportSize.width * 2) / 3) {
+    horizontal = '中央';
+  } else {
+    horizontal = '右';
+  }
+
+  return `${vertical}・${horizontal}`;
+}
+```
+
+**NodeDetails内での表示**:
+
+```tsx
+{node.boundingBox && (
+  <Chip
+    label={getPositionLabel(node.boundingBox, viewportSize)}
+    size="small"
+    variant="outlined"
+    sx={{ ml: 1 }}
+  />
+)}
+```
+
+### 7.5 NodeDetails UI改善
+
+**要素説明を優先表示**:
+
+```tsx
+// 要素説明を大きく表示
+{node.elementDescription && (
+  <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+    {node.elementDescription}
+  </Typography>
+)}
+
+// CSSセレクタは折りたたみ
+<Accordion>
+  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+    <Typography variant="caption" color="text.secondary">
+      技術詳細を表示
+    </Typography>
+  </AccordionSummary>
+  <AccordionDetails>
+    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+      CSS: {node.target}
+    </Typography>
+    {node.xpath && (
+      <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+        XPath: {node.xpath}
+      </Typography>
+    )}
+  </AccordionDetails>
+</Accordion>
+```
+
+### 7.6 タスクとコンポーネントのマッピング
+
+| タスク | コンポーネント | Requirements |
+|--------|----------------|--------------|
+| 14.1 | server/analyzers/axe.ts | 7.1 |
+| 14.2 | server/analyzers/types.ts, frontend/src/types/accessibility.ts | 7.2 |
+| 14.3 | server/analyzers/axe.ts | 7.2, 7.7 |
+| 14.4 | ViolationsTable, ReportSummary | 7.4, 7.5 |
+| 14.5 | NodeDetails | 7.3, 7.6 |
+| 14.6 | NodeDetails | 7.6 |
+| 14.7 | テストファイル | 7.1-7.7 |

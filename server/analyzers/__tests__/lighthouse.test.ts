@@ -237,4 +237,571 @@ describe('LighthouseAnalyzer', () => {
       expect(result.scores).toHaveProperty('seo');
     });
   });
+
+  describe('Lighthouse分類ロジック改善（Requirements 3.1, 3.2, 3.3）', () => {
+    describe('タスク4.1: scoreDisplayModeによる適用外判定', () => {
+      it('scoreDisplayModeがnotApplicableの場合はスキップされる', async () => {
+        // lighthouseモックを再設定
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'image-alt' },
+                    { id: 'video-caption' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'image-alt': {
+                  id: 'image-alt',
+                  title: 'Image elements have alt text',
+                  description: 'Images require alt text',
+                  score: 1,
+                  scoreDisplayMode: 'binary',
+                },
+                'video-caption': {
+                  id: 'video-caption',
+                  title: 'Video elements have captions',
+                  description: 'Videos require captions',
+                  score: null,
+                  scoreDisplayMode: 'notApplicable',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        // notApplicableのauditはどのカテゴリにも含まれないこと
+        const allResults = [...result.violations, ...result.passes, ...result.incomplete];
+        const videoCaptionResult = allResults.find(r => r.id === 'video-caption');
+        expect(videoCaptionResult).toBeUndefined();
+
+        // image-altはpassesに含まれること
+        const imageAltResult = result.passes.find(r => r.id === 'image-alt');
+        expect(imageAltResult).toBeDefined();
+      });
+
+      it('score === null かつ scoreDisplayMode !== notApplicable の場合のみincomplete', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'manual-audit' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'manual-audit': {
+                  id: 'manual-audit',
+                  title: 'Manual audit required',
+                  description: 'This audit requires manual verification',
+                  score: null,
+                  scoreDisplayMode: 'manual',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        // score === null かつ notApplicable以外なのでincompleteに含まれる
+        const manualAudit = result.incomplete.find(r => r.id === 'manual-audit');
+        expect(manualAudit).toBeDefined();
+        expect(manualAudit?.classificationReason).toBe('manual-review');
+      });
+    });
+
+    describe('タスク4.2: 中間スコアの分類閾値を0.5に変更', () => {
+      it('0 < score < 0.5 は違反として分類される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'color-contrast' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'color-contrast': {
+                  id: 'color-contrast',
+                  title: 'Color contrast',
+                  description: 'Background and foreground colors have sufficient contrast',
+                  score: 0.3,
+                  scoreDisplayMode: 'numeric',
+                  details: {
+                    type: 'table',
+                    items: [],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        // score < 0.5 なので違反として分類
+        const colorContrast = result.violations.find(r => r.id === 'color-contrast');
+        expect(colorContrast).toBeDefined();
+        expect(colorContrast?.rawScore).toBe(0.3);
+      });
+
+      it('0.5 <= score < 1 は達成として分類される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'link-name' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'link-name': {
+                  id: 'link-name',
+                  title: 'Links have discernible text',
+                  description: 'Links must have discernible text',
+                  score: 0.7,
+                  scoreDisplayMode: 'numeric',
+                  details: {
+                    type: 'table',
+                    items: [],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        // score >= 0.5 なので達成として分類
+        const linkName = result.passes.find(r => r.id === 'link-name');
+        expect(linkName).toBeDefined();
+        expect(linkName?.rawScore).toBe(0.7);
+      });
+
+      it('score === 0 は違反として分類される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'button-name' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'button-name': {
+                  id: 'button-name',
+                  title: 'Buttons have accessible names',
+                  description: 'Buttons must have accessible names',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const buttonName = result.violations.find(r => r.id === 'button-name');
+        expect(buttonName).toBeDefined();
+        expect(buttonName?.rawScore).toBe(0);
+      });
+
+      it('score === 1 は達成として分類される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'html-has-lang' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'html-has-lang': {
+                  id: 'html-has-lang',
+                  title: 'HTML has lang attribute',
+                  description: 'HTML element must have lang attribute',
+                  score: 1,
+                  scoreDisplayMode: 'binary',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const htmlHasLang = result.passes.find(r => r.id === 'html-has-lang');
+        expect(htmlHasLang).toBeDefined();
+        expect(htmlHasLang?.rawScore).toBe(1);
+      });
+
+      it('rawScoreフィールドに元のスコアが記録される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'test-audit' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'test-audit': {
+                  id: 'test-audit',
+                  title: 'Test audit',
+                  description: 'Test description',
+                  score: 0.65,
+                  scoreDisplayMode: 'numeric',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const testAudit = result.passes.find(r => r.id === 'test-audit');
+        expect(testAudit?.rawScore).toBe(0.65);
+      });
+
+      it('classificationReasonがincomplete項目に記録される', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'informative-audit' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'informative-audit': {
+                  id: 'informative-audit',
+                  title: 'Informative audit',
+                  description: 'Informative only',
+                  score: null,
+                  scoreDisplayMode: 'informative',
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const informativeAudit = result.incomplete.find(r => r.id === 'informative-audit');
+        expect(informativeAudit).toBeDefined();
+        expect(informativeAudit?.classificationReason).toBe('insufficient-data');
+      });
+    });
+
+    describe('タスク4.3: audit.details.itemsからノード情報を抽出', () => {
+      it('details.type === "table" の場合、items[].nodeからノード情報を抽出する', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'color-contrast' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'color-contrast': {
+                  id: 'color-contrast',
+                  title: 'Color contrast',
+                  description: 'Test',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                  details: {
+                    type: 'table',
+                    items: [
+                      {
+                        node: {
+                          selector: 'p.low-contrast',
+                          snippet: '<p class="low-contrast" style="color: #999">Low contrast text</p>',
+                          nodeLabel: 'Low contrast text',
+                        },
+                      },
+                      {
+                        node: {
+                          selector: 'span.faded',
+                          snippet: '<span class="faded">Faded text</span>',
+                          nodeLabel: 'Faded text',
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const colorContrast = result.violations.find(r => r.id === 'color-contrast');
+        expect(colorContrast).toBeDefined();
+        expect(colorContrast?.nodes).toHaveLength(2);
+        expect(colorContrast?.nodes?.[0].target).toBe('p.low-contrast');
+        expect(colorContrast?.nodes?.[0].html).toContain('<p class="low-contrast"');
+        expect(colorContrast?.nodes?.[1].target).toBe('span.faded');
+      });
+
+      it('details.type === "list" の場合、itemsから直接ノード情報を抽出する', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'link-name' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'link-name': {
+                  id: 'link-name',
+                  title: 'Links have discernible text',
+                  description: 'Test',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                  details: {
+                    type: 'list',
+                    items: [
+                      {
+                        selector: 'a.empty-link',
+                        snippet: '<a class="empty-link" href="/page"></a>',
+                        nodeLabel: '',
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const linkName = result.violations.find(r => r.id === 'link-name');
+        expect(linkName).toBeDefined();
+        expect(linkName?.nodes).toHaveLength(1);
+        expect(linkName?.nodes?.[0].target).toBe('a.empty-link');
+        expect(linkName?.nodes?.[0].html).toContain('<a class="empty-link"');
+      });
+
+      it('HTML抜粋が200文字を超える場合は切り詰められる', async () => {
+        const longHtml = '<div class="test">' + 'x'.repeat(250) + '</div>';
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'aria-roles' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'aria-roles': {
+                  id: 'aria-roles',
+                  title: 'ARIA roles are valid',
+                  description: 'Test',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                  details: {
+                    type: 'table',
+                    items: [
+                      {
+                        node: {
+                          selector: 'div.test',
+                          snippet: longHtml,
+                          nodeLabel: 'Test',
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const ariaRoles = result.violations.find(r => r.id === 'aria-roles');
+        expect(ariaRoles?.nodes?.[0].html.length).toBeLessThanOrEqual(203); // 200 + "..."
+      });
+
+      it('nodeCountはノード配列の長さを反映する', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'image-alt' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'image-alt': {
+                  id: 'image-alt',
+                  title: 'Images have alt text',
+                  description: 'Test',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                  details: {
+                    type: 'table',
+                    items: [
+                      { node: { selector: 'img#1', snippet: '<img id="1">', nodeLabel: 'Image 1' } },
+                      { node: { selector: 'img#2', snippet: '<img id="2">', nodeLabel: 'Image 2' } },
+                      { node: { selector: 'img#3', snippet: '<img id="3">', nodeLabel: 'Image 3' } },
+                    ],
+                  },
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const imageAlt = result.violations.find(r => r.id === 'image-alt');
+        expect(imageAlt?.nodeCount).toBe(3);
+        expect(imageAlt?.nodes).toHaveLength(3);
+      });
+
+      it('details がない場合は nodes は空配列', async () => {
+        const lighthouse = await import('lighthouse');
+        vi.mocked(lighthouse.default).mockImplementationOnce(() => {
+          return Promise.resolve({
+            lhr: {
+              categories: {
+                performance: { score: 0.9 },
+                accessibility: {
+                  score: 0.85,
+                  auditRefs: [
+                    { id: 'bypass' },
+                  ],
+                },
+                'best-practices': { score: 0.8 },
+                seo: { score: 0.75 },
+              },
+              audits: {
+                'bypass': {
+                  id: 'bypass',
+                  title: 'Skip links',
+                  description: 'Page has skip links',
+                  score: 0,
+                  scoreDisplayMode: 'binary',
+                  // detailsがない
+                },
+              },
+            },
+          });
+        });
+
+        const { analyzeWithLighthouse } = await import('../lighthouse');
+        const result = await analyzeWithLighthouse('https://example.com');
+
+        const bypass = result.violations.find(r => r.id === 'bypass');
+        expect(bypass?.nodes).toEqual([]);
+      });
+    });
+  });
 });

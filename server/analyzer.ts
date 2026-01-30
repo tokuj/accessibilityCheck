@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import type { AccessibilityReport, RuleResult, ToolInfo, LighthouseScores, AISummary } from './analyzers/types';
-import { analyzeWithAxe, AXE_VERSION } from './analyzers/axe';
+import { analyzeWithAxeEnhanced, AXE_VERSION } from './analyzers/axe';
 import { analyzeWithPa11y, PA11Y_VERSION } from './analyzers/pa11y';
 import { analyzeWithLighthouse, LIGHTHOUSE_VERSION } from './analyzers/lighthouse';
 import { AuthManager } from './auth/manager';
@@ -238,7 +238,7 @@ export async function analyzeUrl(
     console.log('[Analyzer] ページタイトル取得:', pageTitle || '(無題)');
 
     // Run axe-core
-    const axeResult = await analyzeWithAxe(page);
+    const axeResult = await analyzeWithAxeEnhanced(page);
     allViolations.push(...axeResult.violations);
     allPasses.push(...axeResult.passes);
     allIncomplete.push(...axeResult.incomplete);

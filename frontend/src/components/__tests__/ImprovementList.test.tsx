@@ -3,7 +3,7 @@
  * @requirement 4.4, 4.5, 4.6, 4.7 - 対話ポイントの設置
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ImprovementList } from '../ImprovementList';
 import type { RuleResult, AISummary } from '../../types/accessibility';
 
@@ -81,6 +81,61 @@ const mockAISummary: AISummary = {
 describe('ImprovementList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe('Task 11.1: WcagAggregateSummary統合', () => {
+    it('AI総評セクション内にWcagAggregateSummaryが表示されること', () => {
+      render(
+        <ImprovementList
+          violations={mockViolations}
+          aiSummary={mockAISummary}
+        />
+      );
+
+      // WCAG項番別サマリーセクションが表示される
+      expect(screen.getByText('WCAG項番別サマリー')).toBeInTheDocument();
+    });
+
+    it('onWcagFilterコールバックが渡された場合、WcagAggregateSummaryに反映されること', () => {
+      const mockOnWcagFilter = vi.fn();
+      render(
+        <ImprovementList
+          violations={mockViolations}
+          aiSummary={mockAISummary}
+          onWcagFilter={mockOnWcagFilter}
+        />
+      );
+
+      // WCAG項番のサマリーアイテムが表示される
+      const summaryItems = screen.getAllByTestId('wcag-summary-item');
+      expect(summaryItems.length).toBeGreaterThan(0);
+
+      // サマリーアイテムをクリックするとonWcagFilterが呼ばれる
+      fireEvent.click(summaryItems[0]);
+      expect(mockOnWcagFilter).toHaveBeenCalled();
+    });
+
+    it('AI総評がない場合でもWcagAggregateSummaryが表示されること', () => {
+      render(
+        <ImprovementList
+          violations={mockViolations}
+        />
+      );
+
+      // 違反がある場合はWCAG項番別サマリーが表示される
+      expect(screen.getByText('WCAG項番別サマリー')).toBeInTheDocument();
+    });
+
+    it('違反がない場合はWCAG項番別サマリーにメッセージが表示されること', () => {
+      render(
+        <ImprovementList
+          violations={[]}
+        />
+      );
+
+      // 「WCAG項番別の違反はありません」が表示される
+      expect(screen.getByText('WCAG項番別の違反はありません')).toBeInTheDocument();
+    });
   });
 
   it('AI総評セクションが表示される', () => {

@@ -1,5 +1,5 @@
 import pa11y from 'pa11y';
-import type { AnalyzerResult, RuleResult, ImpactLevel } from './types';
+import type { AnalyzerResult, RuleResult, ImpactLevel, NodeInfo } from './types';
 import { getAdBlockingConfig, getTimeoutConfig } from '../config';
 import {
   createAnalyzerTiming,
@@ -10,6 +10,9 @@ import {
 } from '../utils';
 
 export const PA11Y_VERSION = '9.0.1';
+
+/** HTML抜粋の最大文字数 @requirement 1.3 */
+const MAX_HTML_LENGTH = 200;
 
 /**
  * Pa11y認証オプション
@@ -64,6 +67,33 @@ function extractWcagFromCode(code: string): string[] {
   }
 
   return criteria;
+}
+
+/**
+ * Pa11yのissueからノード情報を抽出する
+ * @requirement 1.3 - バックエンドでノード情報を抽出
+ * @requirement 3.1 - issueオブジェクトからセレクタとコンテキストを抽出する
+ */
+function extractNodeInfo(selector?: string, context?: string): NodeInfo[] {
+  // selectorをtargetとして使用（undefinedの場合は空文字列）
+  const target = selector ?? '';
+
+  // contextをhtmlとして使用（undefinedの場合は空文字列）
+  let html = context ?? '';
+
+  // HTML抜粋を200文字に切り詰める
+  if (html.length > MAX_HTML_LENGTH) {
+    html = html.substring(0, MAX_HTML_LENGTH - 3) + '...';
+  }
+
+  // Pa11yは1イシュー=1ノードのため、nodes配列は常に1要素
+  return [
+    {
+      target,
+      html,
+      // Pa11yはfailureSummaryを持たない（axe-core固有のため）
+    },
+  ];
 }
 
 export async function analyzeWithPa11y(
@@ -131,6 +161,7 @@ export async function analyzeWithPa11y(
 
     const results = await pa11y(url, pa11yOptions);
 
+    // @requirement 1.3, 3.1: ノード情報を抽出して結果に含める
     const violations: RuleResult[] = results.issues
       .filter((issue) => issue.type === 'error')
       .map((issue) => ({
@@ -141,6 +172,10 @@ export async function analyzeWithPa11y(
         helpUrl: `https://squizlabs.github.io/HTML_CodeSniffer/Standards/WCAG2/`,
         wcagCriteria: extractWcagFromCode(issue.code),
         toolSource: 'pa11y' as const,
+        nodes: extractNodeInfo(
+          (issue as { selector?: string }).selector,
+          (issue as { context?: string }).context
+        ),
       }));
 
     const incomplete: RuleResult[] = results.issues
@@ -153,6 +188,10 @@ export async function analyzeWithPa11y(
         helpUrl: `https://squizlabs.github.io/HTML_CodeSniffer/Standards/WCAG2/`,
         wcagCriteria: extractWcagFromCode(issue.code),
         toolSource: 'pa11y' as const,
+        nodes: extractNodeInfo(
+          (issue as { selector?: string }).selector,
+          (issue as { context?: string }).context
+        ),
       }));
 
     const duration = Date.now() - startTime;

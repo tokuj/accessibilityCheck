@@ -2,6 +2,52 @@ export type Impact = 'critical' | 'serious' | 'moderate' | 'minor';
 
 export type ToolSource = 'axe-core' | 'pa11y' | 'lighthouse';
 
+/**
+ * 要素のバウンディングボックス情報
+ * @requirement 6.1 - ノードの位置情報を表現
+ */
+export interface BoundingBox {
+  /** 左上X座標（ページ座標系） */
+  x: number;
+  /** 左上Y座標（ページ座標系） */
+  y: number;
+  /** 要素の幅（ピクセル） */
+  width: number;
+  /** 要素の高さ（ピクセル） */
+  height: number;
+}
+
+/**
+ * 個別DOM要素のアクセシビリティ違反情報
+ * @requirement 1.1, 1.2, 6.1, 6.4, 6.5, 6.7, 7.2 - 指摘箇所の具体的な特定と視覚的表示
+ */
+export interface NodeInfo {
+  /** CSSセレクタ（要素を一意に特定） */
+  target: string;
+  /** XPath（要素をDOM上で正確に特定） @requirement 6.4 */
+  xpath?: string;
+  /** HTML抜粋（最大200文字） */
+  html: string;
+  /** 周辺HTML（親要素と兄弟要素を含む） @requirement 6.5 */
+  contextHtml?: string;
+  /** 失敗理由のサマリー（axe-coreのみ） */
+  failureSummary?: string;
+  /** 要素のバウンディングボックス @requirement 6.1 */
+  boundingBox?: BoundingBox;
+  /** 要素がビューポート外または非表示かどうか @requirement 6.7 */
+  isHidden?: boolean;
+  /** 人間が読める要素説明（例：「リンク『詳細はこちら...』」）@requirement 7.2 */
+  elementDescription?: string;
+  /** 要素個別のスクリーンショット（Base64エンコード）@requirement 7.4 */
+  elementScreenshot?: string;
+}
+
+/**
+ * Lighthouse不明項目の分類理由
+ * @requirement 3.4, 3.5 - Lighthouse「不明」項目の削減
+ */
+export type ClassificationReason = 'manual-review' | 'insufficient-data' | 'partial-support';
+
 export interface RuleResult {
   id: string;
   description: string;
@@ -10,6 +56,12 @@ export interface RuleResult {
   helpUrl: string;
   wcagCriteria: string[];
   toolSource: ToolSource;
+  /** ノード情報配列（オプショナル、後方互換性維持） @requirement 1.3 */
+  nodes?: NodeInfo[];
+  /** Lighthouse生スコア（0-1、Lighthouseのみ） @requirement 3.5 */
+  rawScore?: number | null;
+  /** 分類理由（Lighthouseのincomplete項目のみ） @requirement 3.4, 3.5 */
+  classificationReason?: ClassificationReason;
 }
 
 export interface PageResult {

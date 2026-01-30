@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ViolationsTable } from '../ViolationsTable';
 import type { PageResult } from '../../types/accessibility';
 
@@ -113,6 +114,137 @@ describe('ViolationsTable', () => {
       });
       // 2違反 + 2 WCAG基準 = 4以上
       expect(chatButtons.length).toBeGreaterThanOrEqual(4);
+    });
+  });
+
+  describe('NodeDetails展開機能', () => {
+    const mockPagesWithNodes: PageResult[] = [
+      {
+        name: 'ホームページ',
+        url: 'https://example.com',
+        violations: [
+          {
+            id: 'color-contrast',
+            description: 'コントラスト比が不十分',
+            impact: 'serious',
+            nodeCount: 2,
+            wcagCriteria: ['1.4.3'],
+            helpUrl: 'https://example.com/help',
+            toolSource: 'axe-core',
+            nodes: [
+              {
+                target: 'html > body > p',
+                html: '<p style="color: #777">テスト</p>',
+                failureSummary: 'コントラスト比が不足しています',
+              },
+              {
+                target: 'html > body > span',
+                html: '<span style="color: #888">テスト2</span>',
+              },
+            ],
+          },
+        ],
+        passes: [],
+        incomplete: [],
+      },
+    ];
+
+    it('各行に展開アイコンボタンが表示される', () => {
+      render(<ViolationsTable pages={mockPagesWithNodes} />);
+
+      const expandButtons = screen.getAllByRole('button', { name: /ノード情報を展開/ });
+      expect(expandButtons.length).toBe(1);
+    });
+
+    it('展開ボタンをクリックするとノード情報が表示される', async () => {
+      const user = userEvent.setup();
+      render(<ViolationsTable pages={mockPagesWithNodes} />);
+
+      // 初期状態ではノード情報は表示されていない
+      expect(screen.queryByText('<p style="color: #777">テスト</p>')).not.toBeInTheDocument();
+
+      // 展開ボタンをクリック
+      const expandButton = screen.getByRole('button', { name: /ノード情報を展開/ });
+      await user.click(expandButton);
+
+      // ノード情報が表示される（HTML抜粋で確認）
+      expect(screen.getByText('<p style="color: #777">テスト</p>')).toBeInTheDocument();
+    });
+
+    it('展開状態で再度クリックすると折りたたまれる', async () => {
+      const user = userEvent.setup();
+      render(<ViolationsTable pages={mockPagesWithNodes} />);
+
+      // 展開
+      const expandButton = screen.getByRole('button', { name: /ノード情報を展開/ });
+      await user.click(expandButton);
+      expect(screen.getByText('<p style="color: #777">テスト</p>')).toBeInTheDocument();
+
+      // 折りたたみ（テーブルの展開ボタン）
+      const collapseButton = screen.getByRole('button', { name: /ノード情報を折りたたむ/ });
+      await user.click(collapseButton);
+
+      // 展開アイコンが元に戻る
+      expect(screen.getByRole('button', { name: /ノード情報を展開/ })).toBeInTheDocument();
+    });
+
+    it('ノード情報がない場合は展開ボタンが無効化される', () => {
+      const pagesWithoutNodes: PageResult[] = [
+        {
+          name: 'ホームページ',
+          url: 'https://example.com',
+          violations: [
+            {
+              id: 'color-contrast',
+              description: 'コントラスト比が不十分',
+              impact: 'serious',
+              nodeCount: 2,
+              wcagCriteria: ['1.4.3'],
+              helpUrl: 'https://example.com/help',
+              toolSource: 'axe-core',
+              // nodes プロパティなし
+            },
+          ],
+          passes: [],
+          incomplete: [],
+        },
+      ];
+
+      render(<ViolationsTable pages={pagesWithoutNodes} />);
+
+      const expandButton = screen.getByRole('button', { name: /ノード情報/ });
+      expect(expandButton).toBeDisabled();
+    });
+  });
+
+  describe('Task 11.2: WCAGフィルタ機能', () => {
+    it('wcagFilterが指定されていると該当する違反のみ表示される', () => {
+      render(<ViolationsTable pages={mockPages} wcagFilter="1.4.3" />);
+
+      // 1.4.3に該当するcolor-contrastは表示される
+      expect(screen.getByText('color-contrast')).toBeInTheDocument();
+      // 1.1.1のimage-altは表示されない
+      expect(screen.queryByText('image-alt')).not.toBeInTheDocument();
+    });
+
+    it('wcagFilterが指定されていて該当する違反がない場合はメッセージを表示する', () => {
+      render(<ViolationsTable pages={mockPages} wcagFilter="2.4.4" />);
+
+      expect(screen.getByText('WCAG 2.4.4 に該当する違反はありません')).toBeInTheDocument();
+    });
+
+    it('wcagFilterがnullの場合は全ての違反を表示する', () => {
+      render(<ViolationsTable pages={mockPages} wcagFilter={null} />);
+
+      expect(screen.getByText('color-contrast')).toBeInTheDocument();
+      expect(screen.getByText('image-alt')).toBeInTheDocument();
+    });
+
+    it('wcagFilterが未指定の場合は全ての違反を表示する', () => {
+      render(<ViolationsTable pages={mockPages} />);
+
+      expect(screen.getByText('color-contrast')).toBeInTheDocument();
+      expect(screen.getByText('image-alt')).toBeInTheDocument();
     });
   });
 });

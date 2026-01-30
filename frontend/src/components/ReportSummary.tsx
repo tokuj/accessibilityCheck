@@ -14,6 +14,7 @@ import LinkIcon from '@mui/icons-material/Link';
 import BuildIcon from '@mui/icons-material/Build';
 import DownloadIcon from '@mui/icons-material/Download';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import FilterListOffIcon from '@mui/icons-material/FilterListOff';
 import { ScoreCard } from './ScoreCard';
 import { ImprovementList } from './ImprovementList';
 import { ViolationsTable } from './ViolationsTable';
@@ -57,6 +58,8 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   const [tabValue, setTabValue] = useState(0);
   // アクティブなページインデックス（複数ページタブ用、Task 9.1）
   const [activePageIndex, setActivePageIndex] = useState(0);
+  // WCAGフィルタ状態（Task 11.2）
+  const [wcagFilter, setWcagFilter] = useState<string | null>(null);
 
   // PDF生成用のref（Task 5.1）
   const pdfTargetRef = useRef<HTMLDivElement>(null);
@@ -363,6 +366,7 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
           violations={isMultiPage ? activePage.violations : allViolations}
           aiSummary={isMultiPage ? activePage.aiSummary : report.aiSummary}
           targetUrl={currentUrl}
+          onWcagFilter={setWcagFilter}
         />
 
         {/* Divider */}
@@ -407,7 +411,28 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         </Box>
 
         <TabPanel value={tabValue} index={0}>
-          <ViolationsTable pages={isMultiPage ? [activePage] : report.pages} />
+          {/* WCAGフィルタ表示とクリアボタン（Task 11.2） */}
+          {wcagFilter && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                WCAG {wcagFilter} でフィルタリング中
+              </Typography>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<FilterListOffIcon />}
+                onClick={() => setWcagFilter(null)}
+                sx={{ ml: 1 }}
+              >
+                フィルタ解除
+              </Button>
+            </Box>
+          )}
+          <ViolationsTable
+            pages={isMultiPage ? [activePage] : report.pages}
+            wcagFilter={wcagFilter}
+            screenshot={currentScreenshot}
+          />
         </TabPanel>
         <TabPanel value={tabValue} index={1}>
           <PassesTable pages={isMultiPage ? [activePage] : report.pages} />

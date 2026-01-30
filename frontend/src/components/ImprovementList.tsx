@@ -17,12 +17,15 @@ import type { RuleResult, AISummary } from '../types/accessibility';
 import { sortViolationsByImpact } from '../utils/scoreCalculator';
 import { exportAISummaryToCsv } from '../utils/csvExport';
 import { AIChatButton } from './AIChatButton';
+import { WcagAggregateSummary } from './WcagAggregateSummary';
 import type { ChatContext } from '../utils/chat-storage';
 
 interface ImprovementListProps {
   violations: RuleResult[];
   aiSummary?: AISummary;
   targetUrl?: string;
+  /** WCAG項番クリック時のコールバック（Task 11.1） */
+  onWcagFilter?: (criterion: string) => void;
 }
 
 const impactLabels: Record<string, string> = {
@@ -39,7 +42,7 @@ const impactColors: Record<string, { bg: string; text: string }> = {
   minor: { bg: 'grey.200', text: 'text.secondary' },
 };
 
-export function ImprovementList({ violations, aiSummary, targetUrl = '' }: ImprovementListProps) {
+export function ImprovementList({ violations, aiSummary, targetUrl = '', onWcagFilter }: ImprovementListProps) {
   const sortedViolations = sortViolationsByImpact(violations);
   const topViolations = sortedViolations.slice(0, 5);
 
@@ -136,6 +139,12 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
               size="small"
             />
           </Box>
+
+          {/* WCAG項番別サマリー（Task 11.1） */}
+          <WcagAggregateSummary
+            violations={violations}
+            onWcagFilter={onWcagFilter}
+          />
 
         {/* AI総評の詳細 */}
         <>
@@ -340,6 +349,16 @@ export function ImprovementList({ violations, aiSummary, targetUrl = '' }: Impro
               </Box>
             )}
           </>
+        </Box>
+      )}
+
+      {/* AI総評がない場合のWCAG項番別サマリー（Task 11.1） */}
+      {!aiSummary && (
+        <Box sx={{ mb: 3 }}>
+          <WcagAggregateSummary
+            violations={violations}
+            onWcagFilter={onWcagFilter}
+          />
         </Box>
       )}
 

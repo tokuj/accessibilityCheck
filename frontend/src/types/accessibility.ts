@@ -1,6 +1,19 @@
+import type { AnalysisOptions, ToolSource } from './analysis-options';
+import type { SemiAutoItem } from './semi-auto-check';
+import type { CoverageMatrix } from './wcag-coverage';
+import type { WaveStructureInfo } from '../components/WaveStructurePanel';
+import type { MultiEngineViolation } from '../components/EngineSummaryPanel';
+
+// ToolSourceを再エクスポート（後方互換性のため）
+export type { ToolSource } from './analysis-options';
+
 export type Impact = 'critical' | 'serious' | 'moderate' | 'minor';
 
-export type ToolSource = 'axe-core' | 'pa11y' | 'lighthouse';
+/**
+ * エンジン別サマリー型
+ * @requirement wcag-coverage-expansion 6.5 - エンジン別の検出数サマリーを表示
+ */
+export type EngineSummary = Record<ToolSource, { violations: number; passes: number }>;
 
 /**
  * 要素のバウンディングボックス情報
@@ -76,6 +89,8 @@ export interface PageResult {
   screenshot?: string;
   /** ページごとのAI総評 */
   aiSummary?: AISummary;
+  /** 半自動チェック項目 @requirement wcag-coverage-expansion 5.1, 16.2 */
+  semiAutoItems?: SemiAutoItem[];
 }
 
 export interface ToolInfo {
@@ -130,6 +145,16 @@ export interface AccessibilityReport {
   toolsUsed?: ToolInfo[];
   lighthouseScores?: LighthouseScores;
   aiSummary?: AISummary;
+  /** 半自動チェック項目（レポートレベル） @requirement wcag-coverage-expansion 5.1, 16.2 */
+  semiAutoItems?: SemiAutoItem[];
+  /** WCAGカバレッジマトリクス @requirement wcag-coverage-expansion 7.1, 7.2, 7.3, 17.1 */
+  coverageMatrix?: CoverageMatrix;
+  /** エンジン別検出サマリー @requirement wcag-coverage-expansion 6.5, 17.2 */
+  engineSummary?: EngineSummary;
+  /** 複数エンジンで検出された違反 @requirement wcag-coverage-expansion 1.4, 6.3, 17.2 */
+  multiEngineViolations?: MultiEngineViolation[];
+  /** WAVE構造情報 @requirement wcag-coverage-expansion 4.3, 17.3 */
+  waveStructureInfo?: WaveStructureInfo;
 }
 
 // 認証タイプ
@@ -153,11 +178,17 @@ export interface AuthConfig {
   successUrlPattern?: string;
 }
 
+/**
+ * 分析リクエスト
+ * @requirement 15.3 - AnalyzeRequest型にoptionsフィールドを追加
+ */
 export interface AnalyzeRequest {
   url: string;
   auth?: AuthConfig;
   sessionId?: string;
   passphrase?: string;
+  /** 分析オプション（エンジン選択、WCAG版等） */
+  options?: AnalysisOptions;
 }
 
 export interface AnalyzeResponse {

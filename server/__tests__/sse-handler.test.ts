@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { formatSSEData, sendSSEEvent, parseAuthFromQuery, parseSessionFromQuery, parseUrlsFromQuery } from '../sse-handler';
+import { formatSSEData, sendSSEEvent, parseAuthFromQuery, parseSessionFromQuery, parseUrlsFromQuery, parseOptionsFromQuery } from '../sse-handler';
 import type { SSEEvent } from '../analyzers/sse-types';
 import type { Response, Request } from 'express';
+import { DEFAULT_ANALYSIS_OPTIONS } from '../analyzers/analysis-options';
 
 describe('SSEハンドラー', () => {
   describe('formatSSEData', () => {
@@ -283,6 +284,114 @@ describe('SSEハンドラー', () => {
       const result = parseUrlsFromQuery(query);
       expect(result.urls).toHaveLength(4);
       expect(result.error).toBeNull();
+    });
+  });
+
+  describe('parseOptionsFromQuery', () => {
+    /**
+     * @requirement 15.1 - parseOptionsFromQuery関数を実装してクエリパラメータからオプションを取得
+     */
+    it('オプションが未指定の場合はundefinedを返す', () => {
+      const query: Request['query'] = {};
+      expect(parseOptionsFromQuery(query)).toBeUndefined();
+    });
+
+    it('options パラメータがJSON形式で指定された場合にパースする', () => {
+      const options = {
+        engines: {
+          axeCore: true,
+          pa11y: false,
+          lighthouse: true,
+          ibm: true,
+          alfa: false,
+          qualweb: false,
+        },
+        wcagVersion: '2.2',
+        semiAutoCheck: false,
+        responsiveTest: false,
+        viewports: ['desktop'],
+        waveApi: { enabled: false },
+      };
+
+      const query: Request['query'] = {
+        options: JSON.stringify(options),
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result).toBeDefined();
+      expect(result?.engines.ibm).toBe(true);
+      expect(result?.engines.pa11y).toBe(false);
+      expect(result?.wcagVersion).toBe('2.2');
+    });
+
+    it('個別のエンジンオプションをパースする（engines.axeCore=true）', () => {
+      const query: Request['query'] = {
+        'engines.axeCore': 'true',
+        'engines.pa11y': 'true',
+        'engines.lighthouse': 'true',
+        'engines.ibm': 'true',
+        'engines.alfa': 'false',
+        'engines.qualweb': 'false',
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result).toBeDefined();
+      expect(result?.engines.axeCore).toBe(true);
+      expect(result?.engines.ibm).toBe(true);
+      expect(result?.engines.alfa).toBe(false);
+    });
+
+    it('WCAGバージョンをパースする', () => {
+      const query: Request['query'] = {
+        'engines.axeCore': 'true',
+        wcagVersion: '2.2',
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result?.wcagVersion).toBe('2.2');
+    });
+
+    it('WAVE API設定をパースする', () => {
+      const query: Request['query'] = {
+        'engines.axeCore': 'true',
+        'waveApi.enabled': 'true',
+        'waveApi.apiKey': 'test-api-key-123',
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result?.waveApi.enabled).toBe(true);
+      expect(result?.waveApi.apiKey).toBe('test-api-key-123');
+    });
+
+    it('半自動チェックとレスポンシブテスト設定をパースする', () => {
+      const query: Request['query'] = {
+        'engines.axeCore': 'true',
+        semiAutoCheck: 'true',
+        responsiveTest: 'true',
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result?.semiAutoCheck).toBe(true);
+      expect(result?.responsiveTest).toBe(true);
+    });
+
+    it('ビューポート設定をパースする', () => {
+      const query: Request['query'] = {
+        'engines.axeCore': 'true',
+        'viewports[]': ['mobile', 'tablet', 'desktop'],
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result?.viewports).toEqual(['mobile', 'tablet', 'desktop']);
+    });
+
+    it('不正なJSONの場合はundefinedを返す', () => {
+      const query: Request['query'] = {
+        options: 'not-valid-json',
+      };
+
+      const result = parseOptionsFromQuery(query);
+      expect(result).toBeUndefined();
     });
   });
 });

@@ -2,6 +2,8 @@ import type { Request, Response, RequestHandler } from 'express';
 import type { SSEEvent, ProgressCallback } from './analyzers/sse-types';
 import type { AuthConfig, StorageState } from './auth/types';
 import type { AccessibilityReport } from './analyzers/types';
+import type { AnalysisOptions } from './analyzers/analysis-options';
+import { DEFAULT_ANALYSIS_OPTIONS } from './analyzers/analysis-options';
 import { storageStateManager } from './auth/storage-state-manager';
 import { analyzeMultipleUrls } from './multi-url-analyzer';
 
@@ -97,6 +99,78 @@ export function parseSessionFromQuery(query: Request['query']): SessionAuthInfo 
 }
 
 /**
+ * クエリパラメータから分析オプションを取得する
+ *
+ * @requirement 15.1 - parseOptionsFromQuery関数を実装してクエリパラメータからオプションを取得
+ *
+ * オプションは以下の形式で指定可能:
+ * 1. JSON形式: options={...}
+ * 2. 個別パラメータ形式: engines.axeCore=true&engines.ibm=true&wcagVersion=2.2
+ */
+export function parseOptionsFromQuery(query: Request['query']): AnalysisOptions | undefined {
+  // JSON形式のオプション
+  const optionsJson = query.options as string | undefined;
+  if (optionsJson) {
+    try {
+      return JSON.parse(optionsJson) as AnalysisOptions;
+    } catch {
+      // JSONパースエラーの場合はundefinedを返す
+      return undefined;
+    }
+  }
+
+  // 個別パラメータ形式
+  // いずれかのエンジンパラメータが指定されている場合のみオプションを構築
+  const hasEngineParams =
+    query['engines.axeCore'] !== undefined ||
+    query['engines.pa11y'] !== undefined ||
+    query['engines.lighthouse'] !== undefined ||
+    query['engines.ibm'] !== undefined ||
+    query['engines.alfa'] !== undefined ||
+    query['engines.qualweb'] !== undefined;
+
+  if (!hasEngineParams) {
+    return undefined;
+  }
+
+  // デフォルトオプションをベースに構築
+  const options: AnalysisOptions = {
+    engines: {
+      axeCore: query['engines.axeCore'] === 'true',
+      pa11y: query['engines.pa11y'] === 'true',
+      lighthouse: query['engines.lighthouse'] === 'true',
+      ibm: query['engines.ibm'] === 'true',
+      alfa: query['engines.alfa'] === 'true',
+      qualweb: query['engines.qualweb'] === 'true',
+    },
+    waveApi: {
+      enabled: query['waveApi.enabled'] === 'true',
+      apiKey: query['waveApi.apiKey'] as string | undefined,
+    },
+    wcagVersion: (query.wcagVersion as AnalysisOptions['wcagVersion']) || '2.1',
+    semiAutoCheck: query.semiAutoCheck === 'true',
+    responsiveTest: query.responsiveTest === 'true',
+    viewports: parseViewportsFromQuery(query),
+  };
+
+  return options;
+}
+
+/**
+ * ビューポート設定をパースするヘルパー関数
+ */
+function parseViewportsFromQuery(query: Request['query']): AnalysisOptions['viewports'] {
+  const viewportsParam = query['viewports[]'];
+  if (viewportsParam) {
+    if (Array.isArray(viewportsParam)) {
+      return viewportsParam as AnalysisOptions['viewports'];
+    }
+    return [viewportsParam as 'mobile' | 'tablet' | 'desktop'];
+  }
+  return ['desktop'];
+}
+
+/**
  * URLパース結果の型定義
  */
 export interface ParseUrlsResult {
@@ -148,13 +222,16 @@ export function parseUrlsFromQuery(query: Request['query']): ParseUrlsResult {
 
 /**
  * 分析関数の型定義
+ *
+ * @requirement 15.1 - AnalyzeFunction型にoptions引数を追加
  */
 export type AnalyzeFunction = (
   url: string,
   auth: AuthConfig | undefined,
   onProgress: ProgressCallback,
   res: Response,
-  storageState?: StorageState
+  storageState?: StorageState,
+  options?: AnalysisOptions
 ) => Promise<AccessibilityReport>;
 
 /**
@@ -179,6 +256,12 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
     const sessionInfo = parseSessionFromQuery(req.query);
     // 手動認証設定を取得
     const auth = parseAuthFromQuery(req.query);
+    // 分析オプションを取得
+    // @requirement 15.1 - createSSEHandler内でオプションを取得してanalyzeFnに渡す
+    // オプションがパースできない場合はデフォルトにフォールバック（4ステップ固定の旧関数を回避）
+    const parsedOptions = parseOptionsFromQuery(req.query);
+    const options = parsedOptions ?? DEFAULT_ANALYSIS_OPTIONS;
+    console.log(`[SSE] オプション: ${parsedOptions ? 'パース成功' : 'デフォルト使用'}`);
 
     // SSEヘッダーを設定
     setSSEHeaders(res);
@@ -251,10 +334,12 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
         });
 
         // 複数URL分析実行
+        // @requirement wcag-coverage-expansion 15.1 - 分析オプションを渡す
         const report = await analyzeMultipleUrls(urls, {
           authConfig: auth,
           onProgress,
           storageState,
+          options,
         });
 
         // 完了イベントを送信
@@ -276,7 +361,8 @@ export function createSSEHandler(analyzeFn: AnalyzeFunction): RequestHandler {
         });
 
         // 分析実行（storageStateがある場合はそれを使用）
-        const report = await analyzeFn(url, auth, onProgress, res, storageState);
+        // @requirement 15.1 - analyzeFnにオプションを渡す
+        const report = await analyzeFn(url, auth, onProgress, res, storageState, options);
 
         // 完了イベントを送信
         sendSSEEvent(res, {

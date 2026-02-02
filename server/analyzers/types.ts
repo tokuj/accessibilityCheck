@@ -1,5 +1,15 @@
 // Tool source identifier
-export type ToolSource = 'axe-core' | 'pa11y' | 'lighthouse';
+// 既存エンジン: axe-core, pa11y, lighthouse
+// 新規エンジン (wcag-coverage-expansion): ibm, alfa, qualweb, wave, custom
+export type ToolSource =
+  | 'axe-core'
+  | 'pa11y'
+  | 'lighthouse'
+  | 'ibm'       // IBM Equal Access Checker
+  | 'alfa'      // Siteimprove Alfa
+  | 'qualweb'   // QualWeb
+  | 'wave'      // WAVE API
+  | 'custom';   // カスタムルール
 
 // Impact level for accessibility violations
 export type ImpactLevel = 'critical' | 'serious' | 'moderate' | 'minor';
@@ -65,7 +75,14 @@ export interface RuleResult {
   rawScore?: number | null;
   /** 分類理由（Lighthouseのincomplete項目のみ） @requirement 3.4, 3.5 */
   classificationReason?: ClassificationReason;
+  /** 複数エンジンで検出された場合の検出元リスト @requirement wcag-coverage-expansion 1.4 */
+  toolSources?: ToolSource[];
+  /** WCAG 2.2実験的ルールかどうか @requirement wcag-coverage-expansion 2.4 */
+  isExperimental?: boolean;
 }
+
+// SemiAutoItem型のインポート用前方宣言
+import type { SemiAutoItem } from './semi-auto-check';
 
 // Page-level analysis results
 export interface PageResult {
@@ -80,6 +97,8 @@ export interface PageResult {
   screenshot?: string;
   /** ページごとのAI総評 */
   aiSummary?: AISummary;
+  /** 半自動チェック項目 @requirement wcag-coverage-expansion 5.1, 16.2 */
+  semiAutoItems?: SemiAutoItem[];
 }
 
 // Tool execution info
@@ -138,6 +157,8 @@ export interface AccessibilityReport {
   toolsUsed: ToolInfo[];
   lighthouseScores?: LighthouseScores;
   aiSummary?: AISummary;  // AI総評（オプショナル、後方互換性のため）
+  /** 半自動チェック項目（レポートレベル） @requirement wcag-coverage-expansion 5.1, 16.2 */
+  semiAutoItems?: SemiAutoItem[];
 }
 
 // Common analyzer interface

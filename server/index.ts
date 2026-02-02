@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { analyzeUrl, type AuthConfig, type ProgressCallback } from './analyzer';
+import { analyzeUrl, analyzeUrlWithOptions, type AuthConfig, type ProgressCallback, type AnalysisOptions } from './analyzer';
 import { getCorsConfig } from './cors-config';
 import { createSSEHandler, parseAuthFromQuery } from './sse-handler';
 import type { SSEEvent } from './analyzers/sse-types';
@@ -17,8 +17,9 @@ const corsConfig = getCorsConfig();
 app.use(cors(corsConfig));
 app.use(express.json());
 
+// @requirement 15.2 - /api/analyzeエンドポイントでリクエストボディからoptionsを受け取る
 app.post('/api/analyze', async (req, res) => {
-  const { url, auth } = req.body as { url?: string; auth?: AuthConfig };
+  const { url, auth, options } = req.body as { url?: string; auth?: AuthConfig; options?: AnalysisOptions };
 
   if (!url) {
     return res.status(400).json({
@@ -38,10 +39,15 @@ app.post('/api/analyze', async (req, res) => {
 
   // 認証設定のログ（セキュリティのため詳細は出力しない）
   const authType = auth?.type || 'none';
-  console.log(`分析開始: ${url} (認証: ${authType})`);
+  const optionsInfo = options ? `有効エンジン: ${Object.entries(options.engines).filter(([_, v]) => v).map(([k]) => k).join(', ')}` : 'デフォルト';
+  console.log(`分析開始: ${url} (認証: ${authType}, オプション: ${optionsInfo})`);
 
   try {
-    const report = await analyzeUrl(url, auth);
+    // オプションが指定されている場合は新しい分析関数を使用
+    const report = options
+      ? await analyzeUrlWithOptions(url, options, auth)
+      : await analyzeUrl(url, auth);
+
     console.log(`分析完了: 違反${report.summary.totalViolations}件, パス${report.summary.totalPasses}件`);
     console.log(`スクリーンショット: ${report.screenshot ? 'あり (' + Math.round(report.screenshot.length / 1024) + 'KB)' : 'なし'}`);
 
@@ -63,7 +69,13 @@ app.get('/api/health', (_, res) => {
 });
 
 // SSEストリーミングエンドポイント
-const sseHandler = createSSEHandler(async (url, auth, onProgress, _res, storageState) => {
+// @requirement 15.2 - オプションがある場合はanalyzeUrlWithOptionsを使用
+const sseHandler = createSSEHandler(async (url, auth, onProgress, _res, storageState, options) => {
+  // オプションが指定されている場合は新しい分析関数を使用
+  if (options) {
+    return await analyzeUrlWithOptions(url, options, auth, onProgress, storageState);
+  }
+  // 後方互換性: オプションがない場合は既存の関数を使用
   return await analyzeUrl(url, auth, onProgress, storageState);
 });
 app.get('/api/analyze-stream', sseHandler);

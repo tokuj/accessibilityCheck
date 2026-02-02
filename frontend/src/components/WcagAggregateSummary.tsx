@@ -23,11 +23,7 @@ interface WcagSummaryItem {
   /** 総違反件数 */
   totalCount: number;
   /** ツール別検出件数 */
-  toolCounts: {
-    'axe-core': number;
-    'pa11y': number;
-    'lighthouse': number;
-  };
+  toolCounts: Partial<Record<ToolSource, number>>;
 }
 
 /**
@@ -59,12 +55,24 @@ const getLevelColor = (level: WcagLevel): 'success' | 'primary' | 'secondary' | 
 /**
  * ツールに応じたChipカラーを返す
  */
-const getToolColor = (tool: ToolSource): 'default' | 'secondary' | 'warning' => {
+const getToolColor = (tool: ToolSource): 'default' | 'secondary' | 'warning' | 'primary' | 'success' | 'info' | 'error' => {
   switch (tool) {
+    case 'axe-core':
+      return 'default';
     case 'pa11y':
       return 'secondary';
     case 'lighthouse':
       return 'warning';
+    case 'ibm':
+      return 'primary';
+    case 'alfa':
+      return 'success';
+    case 'qualweb':
+      return 'info';
+    case 'wave':
+      return 'error';
+    case 'custom':
+      return 'default';
     default:
       return 'default';
   }
@@ -99,32 +107,26 @@ export function WcagAggregateSummary({
    */
   const summaryItems = useMemo<WcagSummaryItem[]>(() => {
     // WCAG項番 -> ツール別カウントのマップ
-    const criterionMap = new Map<string, { 'axe-core': number; 'pa11y': number; 'lighthouse': number }>();
+    const criterionMap = new Map<string, Partial<Record<ToolSource, number>>>();
 
     for (const violation of violations) {
       for (const criterion of violation.wcagCriteria) {
         if (!criterion) continue;
 
         if (!criterionMap.has(criterion)) {
-          criterionMap.set(criterion, {
-            'axe-core': 0,
-            'pa11y': 0,
-            'lighthouse': 0,
-          });
+          criterionMap.set(criterion, {});
         }
 
         const counts = criterionMap.get(criterion)!;
         const tool = violation.toolSource;
-        if (tool === 'axe-core' || tool === 'pa11y' || tool === 'lighthouse') {
-          counts[tool]++;
-        }
+        counts[tool] = (counts[tool] || 0) + 1;
       }
     }
 
     // WcagSummaryItem配列に変換
     const items: WcagSummaryItem[] = [];
     for (const [criterion, toolCounts] of criterionMap.entries()) {
-      const totalCount = toolCounts['axe-core'] + toolCounts['pa11y'] + toolCounts['lighthouse'];
+      const totalCount = Object.values(toolCounts).reduce((sum, count) => sum + (count || 0), 0);
       items.push({
         criterion,
         level: getWcagLevel(criterion),

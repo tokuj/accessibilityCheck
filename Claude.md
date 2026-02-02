@@ -159,3 +159,32 @@ Kiro-style Spec Driven Development implementation on AI-DLC (AI Development Life
 - Load entire `.kiro/steering/` as project memory
 - Default files: `product.md`, `tech.md`, `structure.md`
 - Custom files are supported (managed via `/kiro:steering-custom`)
+
+## Deploy Skill
+
+Cloud Runへのデプロイを実行する。`/deploy`コマンドで呼び出し可能。
+
+### デプロイ対象
+
+| コンポーネント | スクリプト | サービス名 |
+|--------------|-----------|-----------|
+| バックエンド | `scripts/deploy.sh` | a11y-check-api |
+| フロントエンド | `scripts/deploy-frontend.sh` | a11y-check-frontend |
+
+### 使用方法
+
+```bash
+# バックエンドデプロイ
+./scripts/deploy.sh
+
+# フロントエンドデプロイ
+./scripts/deploy-frontend.sh
+```
+
+### デプロイ後のURL
+
+| 環境 | URL |
+|-----|-----|
+| フロントエンド（本番） | https://a11y-check.itgprototype.com |
+| バックエンドAPI | https://a11y-check-api-783872951114.asia-northeast1.run.app |
+| 固定IP（egress用） | 35.243.70.169 |

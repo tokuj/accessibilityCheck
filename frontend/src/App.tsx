@@ -6,12 +6,14 @@ import { GridBackground } from './components/GridBackground';
 import { UrlInput } from './components/UrlInput';
 import { ReportSummary } from './components/ReportSummary';
 import { AnalysisProgress } from './components/AnalysisProgress';
+import { AnalysisOptionsPanel } from './components/AnalysisOptionsPanel';
 import { analyzeMultipleUrlsWithSSE } from './services/api';
 import {
   clearAllChatHistory,
   setCurrentTargetUrl
 } from './utils/chat-storage';
 import type { AccessibilityReport, AuthConfig, LogEntry, AnalysisState } from './types/accessibility';
+import { DEFAULT_ANALYSIS_OPTIONS, type AnalysisOptions } from './types/analysis-options';
 
 // 最大ログ行数（メモリ管理のため）
 const MAX_LOG_ENTRIES = 1000;
@@ -33,6 +35,9 @@ function App() {
   // アクティブなレポートタブのインデックス（Task 6.2）
   // 注: setActiveReportTabは初期化時に0にリセットするために使用
   const [, setActiveReportTab] = useState(0);
+
+  // @requirement 15.4 - 分析オプションの状態管理
+  const [analysisOptions, setAnalysisOptions] = useState<AnalysisOptions>(DEFAULT_ANALYSIS_OPTIONS);
 
   /**
    * 分析ハンドラー（複数URL対応）
@@ -66,8 +71,9 @@ function App() {
       currentPageTitle: '',
     });
 
+    // @requirement 15.4 - 分析リクエストにオプションを含める
     analyzeMultipleUrlsWithSSE(
-      { urls, auth },
+      { urls, auth, options: analysisOptions },
       {
         onLog: (log) => {
           setLogs((prev) => {
@@ -118,7 +124,7 @@ function App() {
       },
       { sessionId, passphrase }
     );
-  }, []);
+  }, [analysisOptions]);
 
   const handleReset = () => {
     setReport(null);
@@ -170,6 +176,17 @@ function App() {
               showSessionManager={true}
               isDevelopment={import.meta.env.DEV}
             />
+
+          {/* @requirement 15.4 - 分析オプションパネルをURLInputの下に配置 */}
+          <Box sx={{ width: '100%', maxWidth: 600, mt: 2 }}>
+            <AnalysisOptionsPanel
+              options={analysisOptions}
+              onChange={setAnalysisOptions}
+              compact={true}
+              loadFromStorage={true}
+              saveToStorage={true}
+            />
+          </Box>
 
           {error && (
             <Alert severity="error" sx={{ mt: 3, maxWidth: 600 }}>

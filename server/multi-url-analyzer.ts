@@ -9,15 +9,19 @@
 import type { AccessibilityReport, PageResult, RuleResult, ToolInfo, LighthouseScores, AISummary } from './analyzers/types';
 import type { ProgressCallback, SSEEvent, PageProgressEvent } from './analyzers/sse-types';
 import type { AuthConfig, StorageState } from './auth/types';
-import { analyzeUrl } from './analyzer';
+import type { AnalysisOptions } from './analyzers/analysis-options';
+import { analyzeUrl, analyzeUrlWithOptions } from './analyzer';
 
 /**
  * 複数URL分析のオプション
+ * @requirement wcag-coverage-expansion 15.1 - 分析オプションのサポートを追加
  */
 export interface MultiAnalyzeOptions {
   authConfig?: AuthConfig;
   onProgress?: ProgressCallback;
   storageState?: StorageState;
+  /** 分析オプション（エンジン選択、WCAGバージョン等） */
+  options?: AnalysisOptions;
 }
 
 /**
@@ -70,9 +74,9 @@ function emitPageProgress(
  */
 export async function analyzeMultipleUrls(
   urls: string[],
-  options: MultiAnalyzeOptions = {}
+  multiOptions: MultiAnalyzeOptions = {}
 ): Promise<MultiUrlReport> {
-  const { authConfig, onProgress, storageState } = options;
+  const { authConfig, onProgress, storageState, options: analysisOptions } = multiOptions;
   const totalPages = urls.length;
 
   const pages: PageResultWithError[] = [];
@@ -101,7 +105,10 @@ export async function analyzeMultipleUrls(
       };
 
       // 単一URL分析を実行（storageStateを共有）
-      const report = await analyzeUrl(url, authConfig, pageOnProgress, storageState);
+      // @requirement wcag-coverage-expansion 15.1 - オプションがある場合はanalyzeUrlWithOptionsを使用
+      const report = analysisOptions
+        ? await analyzeUrlWithOptions(url, analysisOptions, authConfig, pageOnProgress, storageState)
+        : await analyzeUrl(url, authConfig, pageOnProgress, storageState);
 
       // ページ結果を取得（通常は1ページのみ）
       // pageResultにはscreenshot, lighthouseScores, aiSummaryが含まれる（analyzer.tsで設定済み）

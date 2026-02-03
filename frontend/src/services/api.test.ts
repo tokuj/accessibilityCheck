@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { analyzeUrl, ApiError, analyzeMultipleUrlsWithSSE } from './api';
+import { analyzeUrl, ApiError, analyzeMultipleUrlsWithSSE, analyzeUrlWithSSE } from './api';
+import type { AnalysisOptions } from '../types/analysis-options';
 
 describe('api.ts', () => {
   beforeEach(() => {
@@ -251,6 +252,119 @@ describe('api.ts', () => {
           message: expect.stringContaining('ページ1'),
         })
       );
+    });
+
+    /**
+     * @requirement 15.3 - analyzeMultipleUrlsWithSSEでオプションをクエリパラメータに追加
+     */
+    it('オプションをクエリパラメータに追加すること', () => {
+      const urls = ['https://example.com/page1'];
+      const options: AnalysisOptions = {
+        engines: {
+          axeCore: true,
+          pa11y: false,
+          lighthouse: true,
+          ibm: true,
+          alfa: false,
+          qualweb: false,
+        },
+        waveApi: { enabled: false },
+        wcagVersion: '2.2',
+        semiAutoCheck: true,
+        responsiveTest: false,
+        viewports: ['desktop'],
+      };
+
+      analyzeMultipleUrlsWithSSE(
+        { urls, options },
+        {}
+      );
+
+      const calledUrl = EventSourceMock.mock.calls[0][0];
+      const parsedUrl = new URL(calledUrl);
+
+      // オプションがJSON文字列として設定されていることを確認
+      const optionsParam = parsedUrl.searchParams.get('options');
+      expect(optionsParam).toBeDefined();
+      const parsedOptions = JSON.parse(optionsParam!);
+      expect(parsedOptions.engines.ibm).toBe(true);
+      expect(parsedOptions.wcagVersion).toBe('2.2');
+    });
+  });
+
+  describe('analyzeUrlWithSSE', () => {
+    let mockEventSource: {
+      onmessage: ((event: MessageEvent) => void) | null;
+      onerror: (() => void) | null;
+      close: () => void;
+    };
+
+    let EventSourceMock: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mockEventSource = {
+        onmessage: null,
+        onerror: null,
+        close: vi.fn(),
+      };
+      EventSourceMock = vi.fn().mockImplementation(function() {
+        return mockEventSource;
+      });
+      vi.stubGlobal('EventSource', EventSourceMock);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /**
+     * @requirement 15.3 - analyzeUrlWithSSEでオプションをクエリパラメータに追加
+     */
+    it('オプションをクエリパラメータに追加すること', () => {
+      const options: AnalysisOptions = {
+        engines: {
+          axeCore: true,
+          pa11y: true,
+          lighthouse: true,
+          ibm: true,
+          alfa: true,
+          qualweb: false,
+        },
+        waveApi: { enabled: true, apiKey: 'test-api-key' },
+        wcagVersion: '2.2',
+        semiAutoCheck: false,
+        responsiveTest: true,
+        viewports: ['mobile', 'desktop'],
+      };
+
+      analyzeUrlWithSSE(
+        { url: 'https://example.com', options },
+        {}
+      );
+
+      const calledUrl = EventSourceMock.mock.calls[0][0];
+      const parsedUrl = new URL(calledUrl);
+
+      // オプションがJSON文字列として設定されていることを確認
+      const optionsParam = parsedUrl.searchParams.get('options');
+      expect(optionsParam).toBeDefined();
+      const parsedOptions = JSON.parse(optionsParam!);
+      expect(parsedOptions.engines.ibm).toBe(true);
+      expect(parsedOptions.engines.alfa).toBe(true);
+      expect(parsedOptions.waveApi.enabled).toBe(true);
+      expect(parsedOptions.wcagVersion).toBe('2.2');
+    });
+
+    it('オプションがない場合はクエリパラメータに追加しないこと', () => {
+      analyzeUrlWithSSE(
+        { url: 'https://example.com' },
+        {}
+      );
+
+      const calledUrl = EventSourceMock.mock.calls[0][0];
+      const parsedUrl = new URL(calledUrl);
+
+      expect(parsedUrl.searchParams.get('options')).toBeNull();
     });
   });
 });

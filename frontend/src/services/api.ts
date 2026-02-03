@@ -154,6 +154,11 @@ export function analyzeUrlWithSSE(
     if (request.auth.successUrlPattern) url.searchParams.set('authSuccessUrlPattern', request.auth.successUrlPattern);
   }
 
+  // @requirement 15.3 - 分析オプションをクエリパラメータに追加（単一URL分析）
+  if (request.options) {
+    url.searchParams.set('options', JSON.stringify(request.options));
+  }
+
   const eventSource = new EventSource(url.toString());
 
   eventSource.onmessage = (event) => {
@@ -231,10 +236,13 @@ export function analyzeUrlWithSSE(
 /**
  * 複数URL分析用リクエスト
  * @requirement 5.1 - 配列形式で複数URLを受け付けるエンドポイントを提供する
+ * @requirement 15.3 - optionsフィールドを追加
  */
 export interface MultiAnalyzeRequest {
   urls: string[];
   auth?: AnalyzeRequest['auth'];
+  /** 分析オプション */
+  options?: AnalyzeRequest['options'];
 }
 
 /**
@@ -274,6 +282,11 @@ export function analyzeMultipleUrlsWithSSE(
     if (request.auth.passwordSelector) url.searchParams.set('authPasswordSelector', request.auth.passwordSelector);
     if (request.auth.submitSelector) url.searchParams.set('authSubmitSelector', request.auth.submitSelector);
     if (request.auth.successUrlPattern) url.searchParams.set('authSuccessUrlPattern', request.auth.successUrlPattern);
+  }
+
+  // @requirement 15.3 - 分析オプションをクエリパラメータに追加
+  if (request.options) {
+    url.searchParams.set('options', JSON.stringify(request.options));
   }
 
   const eventSource = new EventSource(url.toString());

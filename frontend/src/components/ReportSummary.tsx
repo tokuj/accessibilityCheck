@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -22,7 +22,12 @@ import { PassesTable } from './PassesTable';
 import { IncompleteTable } from './IncompleteTable';
 import { LighthouseScores } from './LighthouseScores';
 import { PageTabs } from './PageTabs';
+import { SemiAutoCheckPanel } from './SemiAutoCheckPanel';
+import { WCAGCoverageMatrix } from './WCAGCoverageMatrix';
+import { EngineSummaryPanel } from './EngineSummaryPanel';
+import { WaveStructurePanel } from './WaveStructurePanel';
 import type { AccessibilityReport, RuleResult } from '../types/accessibility';
+import type { SemiAutoItem, SemiAutoAnswer, SemiAutoProgress } from '../types/semi-auto-check';
 import { calculateScores, calculatePageScores } from '../utils/scoreCalculator';
 import { exportAllResultsToCsv, type ResultWithPage } from '../utils/csvExport';
 import { exportReportToPdf, generatePdfFileName } from '../utils/pdfExport';
@@ -63,6 +68,16 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
 
   // PDF生成用のref（Task 5.1）
   const pdfTargetRef = useRef<HTMLDivElement>(null);
+
+  // 半自動チェック用の状態（Task 16.3）
+  // @requirement wcag-coverage-expansion 5.1, 5.2, 5.3, 5.5, 5.6, 16.3
+  const [semiAutoItems, setSemiAutoItems] = useState<SemiAutoItem[]>(() => {
+    // レポートから半自動チェック項目を初期化
+    const items = report.semiAutoItems || report.pages[0]?.semiAutoItems || [];
+    return items;
+  });
+  const [currentSemiAutoIndex, setCurrentSemiAutoIndex] = useState(0);
+  const [semiAutoComplete, setSemiAutoComplete] = useState(false);
 
   // PDF生成状態（Task 5.3）
   const [isPdfGenerating, setIsPdfGenerating] = useState(false);
@@ -118,6 +133,57 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
   const currentScreenshot = isMultiPage
     ? activePage.screenshot || report.screenshot
     : report.screenshot;
+
+  // 半自動チェックの進捗状況を計算（Task 16.3）
+  // @requirement wcag-coverage-expansion 5.6
+  const semiAutoProgress: SemiAutoProgress = useMemo(() => {
+    const completed = semiAutoItems.filter(item => item.answer !== undefined).length;
+    return { completed, total: semiAutoItems.length };
+  }, [semiAutoItems]);
+
+  // 半自動チェック回答ハンドラー（Task 16.3）
+  // @requirement wcag-coverage-expansion 5.3
+  const handleSemiAutoAnswer = useCallback((itemId: string, answer: SemiAutoAnswer) => {
+    setSemiAutoItems(prevItems =>
+      prevItems.map(item =>
+        item.id === itemId
+          ? { ...item, answer, answeredAt: new Date().toISOString() }
+          : item
+      )
+    );
+
+    // 次の未回答項目に移動
+    const nextIndex = semiAutoItems.findIndex(
+      (item, index) => index > currentSemiAutoIndex && !item.answer
+    );
+
+    if (nextIndex !== -1) {
+      setCurrentSemiAutoIndex(nextIndex);
+    } else {
+      // 未回答項目がなければ完了チェック
+      const allAnswered = semiAutoItems.every(
+        (item, index) => index === semiAutoItems.findIndex(i => i.id === itemId) || item.answer
+      );
+      if (allAnswered) {
+        setSemiAutoComplete(true);
+      }
+    }
+  }, [semiAutoItems, currentSemiAutoIndex]);
+
+  // 半自動チェックスキップハンドラー（Task 16.3）
+  // @requirement wcag-coverage-expansion 5.5
+  const handleSemiAutoSkip = useCallback((_itemId: string) => {
+    // 次の項目に移動（回答済みも未回答も含む）
+    const nextIndex = (currentSemiAutoIndex + 1) % semiAutoItems.length;
+    setCurrentSemiAutoIndex(nextIndex);
+  }, [currentSemiAutoIndex, semiAutoItems.length]);
+
+  // 半自動チェック完了ハンドラー（Task 16.3）
+  const handleSemiAutoComplete = useCallback(() => {
+    // 完了時の処理（将来的にはAPI送信など）
+    console.log('半自動チェック完了:', semiAutoItems.filter(item => item.answer));
+    setSemiAutoComplete(true);
+  }, [semiAutoItems]);
 
   // 詳細タブ用のカウント（複数ページ時はアクティブページ、単一ページ時は全体サマリー）
   const detailCounts = isMultiPage
@@ -372,6 +438,58 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
         {/* Divider */}
         <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
 
+        {/* 半自動チェックパネル（Task 16.3）*/}
+        {/* @requirement wcag-coverage-expansion 5.1, 5.2, 5.3, 5.5, 5.6, 16.3 */}
+        {semiAutoItems.length > 0 && (
+          <>
+            <SemiAutoCheckPanel
+              items={semiAutoItems}
+              currentIndex={currentSemiAutoIndex}
+              onAnswer={handleSemiAutoAnswer}
+              onSkip={handleSemiAutoSkip}
+              onComplete={handleSemiAutoComplete}
+              progress={semiAutoProgress}
+              isComplete={semiAutoComplete}
+              hidden={false}
+            />
+            <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
+          </>
+        )}
+
+        {/* WCAGカバレッジマトリクス（Task 17.1）*/}
+        {/* @requirement wcag-coverage-expansion 7.1, 7.2, 7.3, 7.4, 7.5, 17.1 */}
+        {report.coverageMatrix && (
+          <>
+            <WCAGCoverageMatrix
+              matrix={report.coverageMatrix}
+            />
+            <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
+          </>
+        )}
+
+        {/* エンジン別検出サマリー（Task 17.2）*/}
+        {/* @requirement wcag-coverage-expansion 1.4, 6.3, 6.5, 17.2 */}
+        {report.engineSummary && (
+          <>
+            <EngineSummaryPanel
+              engineSummary={report.engineSummary}
+              multiEngineViolations={report.multiEngineViolations || []}
+            />
+            <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
+          </>
+        )}
+
+        {/* WAVE構造情報（Task 17.3）*/}
+        {/* @requirement wcag-coverage-expansion 4.3, 17.3 */}
+        {report.waveStructureInfo && (
+          <>
+            <WaveStructurePanel
+              structureInfo={report.waveStructureInfo}
+            />
+            <Box sx={{ my: 4, borderBottom: 1, borderColor: 'divider' }} />
+          </>
+        )}
+
         {/* Detail Tabs */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6">
@@ -431,7 +549,6 @@ export function ReportSummary({ report, url, onClose }: ReportSummaryProps) {
           <ViolationsTable
             pages={isMultiPage ? [activePage] : report.pages}
             wcagFilter={wcagFilter}
-            screenshot={currentScreenshot}
           />
         </TabPanel>
         <TabPanel value={tabValue} index={1}>
